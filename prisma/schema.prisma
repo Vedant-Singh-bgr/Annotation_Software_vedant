@@ -1,0 +1,262 @@
+// Video annotation platform — Kosha Labs v4 hand-manipulation schema.
+//
+// Hierarchy:  Organization (annotation company)
+//               └─ Project        a body of work for a client
+//                    └─ Batch      an R2 import with per-batch config (Q cadence, fps)
+//                         └─ Clip  one video pulled from R2
+//                              └─ Assignment  one annotator's job over one clip
+//                                   ├─ Task (L1)         long-horizon tasks
+//                                   │    └─ SubTask (L2) atomic sub-actions, tile the task
+//                                   └─ FrameQuality (Q)  sampled per-frame usability flags
+//
+// All temporal positions are FRAME INDICES (integers, first frame = 0), per the
+// guideline — never seconds. fps (default 30) lives on Batch/Clip for time<->frame.
+//
+// Provider: SQLite for zero-infra dev. For production switch to Postgres (see
+// docker-compose.yml / README). role/status/flags are plain strings & JSON so
+// the schema is provider-portable; validation is in the API layer.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Role: PLATFORM_ADMIN | ORG_ADMIN | ANNOTATOR         (src/lib/constants.ts)
+// AssignmentStatus: ASSIGNED | IN_PROGRESS | SUBMITTED | APPROVED | REJECTED
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  users    User[]
+  projects Project[]
+}
+
+model User {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  name           String
+  passwordHash   String
+  role           String
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  assignments   Assignment[]   @relation("AnnotatorAssignments")
+  tasks         Task[]
+  subTasks      SubTask[]
+  frameQuality  FrameQuality[]
+
+  @@index([organizationId])
+}
+
+model Project {
+  id             String       @id @default(cuid())
+  name           String
+  description    String       @default("")
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  batches Batch[]
+
+  @@index([organizationId])
+}
+
+// A group of clips imported together from R2, with the guideline's per-batch
+// config (quality sampling cadence + default fps).
+model Batch {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  r2Prefix    String   @default("") // the R2 prefix these clips were imported from
+  sampleEveryN Int     @default(45) // Q cadence: sample every Nth frame
+  defaultFps  Float    @default(30)
+  createdAt   DateTime @default(now())
+
+  // Batch delivery: a manifest.json listing every published (approved) export in
+  // this batch, written to R2. Lets the training side consume one file per batch.
+  manifestR2Key String?
+  publishedAt   DateTime?
+
+  clips Clip[]
+
+  @@index([projectId])
+}
+
+// One clip = one recording SESSION (the annotatable unit). A session is uploaded
+// as multiple ~4-min MCAP segments (ClipSegment rows, content-addressed on R2).
+// Since MCAP isn't browser-playable, a stream-copied MP4 proxy (proxyR2Key) is
+// what annotators actually watch. Annotators only ever see clips assigned to them.
+model Clip {
+  id          String   @id @default(cuid())
+  batchId     String
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  title       String
+  r2Key       String? // legacy single-object key (manual/flat clips)
+  sourceUrl   String? // fallback playback URL when R2/proxy is not configured
+  sizeBytes   Int? // total session bytes, if known
+  fps         Float    @default(30)
+  frameCount  Int? // total frames across the session, if known
+  durationSec Float? // total duration in seconds, if known
+  createdAt   DateTime @default(now())
+
+  // Upload-session provenance (from the R2 session manifest.json).
+  sessionId   String? // upload session_id
+  sessionHash String?
+  tenantId    String?
+  worksiteId  String?
+  workerId    String?
+  dataType    String? // monocular | stereo | tactile
+
+  // Playable proxy produced by MCAP -> stream-copy MP4 transcode.
+  proxyR2Key  String?
+  proxyStatus String  @default("none") // none | pending | transcoding | ready | failed
+  proxyError  String? // last transcode failure reason
+
+  assignments Assignment[]
+  segments    ClipSegment[]
+
+  @@unique([batchId, r2Key])
+  @@unique([batchId, sessionId])
+  @@index([batchId])
+}
+
+// One ~4-min MCAP segment of a session, as listed in the upload manifest.json.
+// Content-addressed by sha256; the actual bytes live at r2BlobKey. Frame/time
+// ranges are filled in by the transcode/probe step (null until then).
+model ClipSegment {
+  id          String   @id @default(cuid())
+  clipId      String
+  clip        Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  orderIndex  Int      @default(0)
+  logicalPath String // e.g. zedx_20260703_162110_004.mcap
+  sha256      String
+  r2BlobKey   String // tenants/<t>/blobs/sha256/xx/yy/<hash>
+  sizeBytes   Int?
+  contentType String?
+  startFrame  Int? // inclusive, within the session timeline
+  endFrame    Int? // exclusive
+  startTimeSec Float?
+  endTimeSec   Float?
+  createdAt   DateTime @default(now())
+
+  @@index([clipId])
+}
+
+model Assignment {
+  id          String    @id @default(cuid())
+  clipId      String
+  clip        Clip      @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  annotatorId String
+  annotator   User      @relation("AnnotatorAssignments", fields: [annotatorId], references: [id], onDelete: Cascade)
+  status      String    @default("ASSIGNED")
+  reviewNote  String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  submittedAt DateTime?
+
+  // Published export: the annotation JSON is written to R2 alongside the clip's
+  // MP4 proxy (same folder), so labels and video are delivered as a pair.
+  exportR2Key    String? // tenants/<t>/proxies/<sid>/annotations/<assignmentId>.json
+  exportedAt     DateTime?
+  exportError    String?
+
+  tasks        Task[]
+  frameQuality FrameQuality[]
+
+  @@unique([clipId, annotatorId])
+  @@index([annotatorId])
+  @@index([clipId])
+}
+
+// L1 — Long-horizon task. Boundaries are frame indices (±30 frame target).
+model Task {
+  id           String  @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  orderIndex   Int     @default(0)
+  startFrame   Int
+  endFrame     Int
+  label        String  @default("") // lowercase verb_noun, written from scratch
+  difficulty   String  @default("") // easy | medium | hard
+  venueL2      String  @default("") // from approved list (TaxonomyItem VENUE_L2)
+  venueL3      String  @default("") // from approved list (TaxonomyItem VENUE_L3)
+  job          String  @default("") // from approved list (TaxonomyItem JOB)
+  confidence   Float? // task_confidence 0..1
+  qualityFlags String  @default("[]") // JSON array of task-level flags
+  notes        String  @default("")
+  createdById  String
+  createdBy    User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subTasks SubTask[]
+
+  @@index([assignmentId])
+}
+
+// L2 — Sub-task. Must tile its parent task with no gaps/overlaps (±15 frames).
+model SubTask {
+  id          String  @id @default(cuid())
+  taskId      String
+  task        Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  orderIndex  Int     @default(0)
+  startFrame  Int
+  endFrame    Int
+  label       String  @default("") // snake_case, 2..5 tokens
+  description String  @default("") // overall / left hand / right hand
+  objectLeft  String  @default("")
+  objectRight String  @default("")
+  confidence  Float?
+  notes       String  @default("")
+  createdById String
+  createdBy   User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([taskId])
+}
+
+// Q — Frame quality flags on a sampled cadence (every Nth frame).
+model FrameQuality {
+  id           String  @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  frameIndex   Int
+  realWork     Boolean @default(true)
+  repetitive   Boolean @default(false)
+  occluded     Boolean @default(false)
+  smudge       Boolean @default(false)
+  glare        Boolean @default(false)
+  blur         Boolean @default(false)
+  notes        String  @default("")
+  createdById  String
+  createdBy    User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([assignmentId, frameIndex])
+  @@index([assignmentId])
+}
+
+// Appendix A approved lists (venue_L2, venue_L3, job). projectId null = global
+// default. Annotators select from these; admins manage them in-app.
+model TaxonomyItem {
+  id        String  @id @default(cuid())
+  type      String // VENUE_L2 | VENUE_L3 | JOB
+  value     String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+  projectId String? // null = global
+  createdAt DateTime @default(now())
+
+  @@unique([type, value, projectId])
+  @@index([type])
+}

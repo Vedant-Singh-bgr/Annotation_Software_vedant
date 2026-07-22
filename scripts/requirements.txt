@@ -1,0 +1,5 @@
+# Transcode worker + transcode_session.py dependencies.
+mcap
+mcap-protobuf-support
+imageio-ffmpeg
+boto3

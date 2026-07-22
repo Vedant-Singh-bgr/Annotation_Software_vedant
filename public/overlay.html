@@ -1,0 +1,206 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Kosha overlay verifier</title>
+<style>
+  body { margin: 0; background: #0b0f15; color: #e2e8f0; font: 14px system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 16px; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  input[type=text] { flex: 1; min-width: 240px; background: #1a2230; color: #e2e8f0; border: 1px solid #2b3648; border-radius: 6px; padding: 6px 8px; }
+  button, label.file { background: #2563eb; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  .stage { position: relative; background: #000; border-radius: 8px; overflow: hidden; }
+  video { width: 100%; display: block; }
+  .hud { position: absolute; left: 10px; top: 10px; right: 10px; pointer-events: none;
+         font-family: ui-monospace, monospace; text-shadow: 0 1px 3px #000; }
+  .frame { font-size: 22px; font-weight: 700; color: #93c5fd; }
+  .l1 { margin-top: 6px; font-size: 16px; color: #fff; }
+  .l1 .meta { font-size: 12px; color: #cbd5e1; }
+  .l2 { margin-top: 4px; font-size: 14px; color: #fde68a; }
+  .l2 .desc { font-size: 12px; color: #e2e8f0; max-width: 70%; }
+  .q { position: absolute; right: 10px; bottom: 10px; font-family: ui-monospace, monospace;
+       font-size: 12px; background: rgba(0,0,0,.5); padding: 6px 8px; border-radius: 6px; }
+  .q .flag { color: #64748b; } .q .on { color: #f87171; font-weight: 700; }
+  .none { color: #64748b; }
+  .track { position: relative; height: 22px; margin-top: 10px; background: #111827; border-radius: 4px; overflow: hidden; cursor: pointer; }
+  .seg { position: absolute; top: 0; bottom: 0; }
+  .seg.l1 { background: rgba(37,99,235,.5); border-right: 1px solid #000; }
+  .ph { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; }
+  .hint { color: #94a3b8; font-size: 12px; margin: 8px 0; }
+  code { background:#1a2230; padding:1px 4px; border-radius:4px; }
+  .dropmsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+             color:#64748b; font-size:15px; pointer-events:none; z-index:1; }
+  .stage.drag { outline:2px dashed #2563eb; outline-offset:-6px; }
+  .stage.drag .dropmsg { color:#93c5fd; }
+  body.drag { background:#0d1420; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Kosha overlay verifier</h1>
+  <p class="hint">Plays a clip and overlays the exported JSON at each frame using
+    <code>frame = round(currentTime × fps)</code> — the same mapping the workspace uses.
+    <b>Drag &amp; drop</b> the video file and the exported JSON anywhere on this page
+    (or use the buttons). Labels should appear exactly on the action you annotated.</p>
+  <div class="bar">
+    <input id="aid" type="text" placeholder="assignment id — loads clip + JSON from the server" />
+    <button id="loadserver">Load from server</button>
+    <label class="file">Video file<input id="vfile" type="file" accept="video/*" hidden /></label>
+    <label class="file">Exported JSON<input id="json" type="file" accept="application/json,.json" hidden /></label>
+    <span id="info" class="hint">enter an assignment id (or drop a video + JSON)…</span>
+  </div>
+  <div class="stage" id="drop">
+    <div class="dropmsg" id="dropmsg">⬇ Drop video / JSON here</div>
+    <video id="v" controls preload="metadata"></video>
+    <div class="hud">
+      <div class="frame" id="frame">frame –</div>
+      <div class="l1" id="l1"></div>
+      <div class="l2" id="l2"></div>
+    </div>
+    <div class="q" id="q"></div>
+  </div>
+  <div class="track" id="track"></div>
+</div>
+<script>
+  const v = document.getElementById('v');
+  const dropmsg = document.getElementById('dropmsg');
+  let data = null, fps = 30, frameCount = 0, objUrl = null;
+
+  // ── load a local video file (no server needed) ──
+  function setVideoFile(file) {
+    if (objUrl) URL.revokeObjectURL(objUrl);
+    objUrl = URL.createObjectURL(file);
+    v.src = objUrl;
+    v.load();
+    dropmsg.style.display = 'none';
+  }
+  document.getElementById('vfile').onchange = (e) => {
+    const f = e.target.files[0]; if (f) setVideoFile(f);
+  };
+
+  // ── load the exported JSON ──
+  function loadJsonFile(file) {
+    const r = new FileReader();
+    r.onload = () => {
+      try { data = JSON.parse(r.result); }
+      catch { document.getElementById('info').textContent = 'That JSON did not parse.'; return; }
+      fps = data.clip?.fps || 30;
+      frameCount = data.clip?.frameCount || 0;
+      document.getElementById('info').textContent =
+        `${data.clip?.title||'clip'} · ${fps.toFixed(3)} fps · ${data.L1_tasks?.length||0} L1 · ` +
+        `${data.L2_subtasks?.length||0} L2 · ${data.Q_frame_quality?.length||0} Q`;
+      buildTrack();
+      render();
+    };
+    r.readAsText(file);
+  }
+  document.getElementById('json').onchange = (e) => {
+    const f = e.target.files[0]; if (f) loadJsonFile(f);
+  };
+
+  // ── load a clip + its JSON straight from the server by assignment id ──
+  // Nothing is stored locally: the video streams from R2 (presigned) and the JSON
+  // is generated from the DB. The id keys both, so the mapping is always correct.
+  function applyExport(exp) {
+    data = exp;
+    fps = data.clip?.fps || 30;
+    frameCount = data.clip?.frameCount || 0;
+    document.getElementById('info').textContent =
+      `${data.clip?.title||'clip'} · ${fps.toFixed(3)} fps · ${data.L1_tasks?.length||0} L1 · ` +
+      `${data.L2_subtasks?.length||0} L2 · ${data.Q_frame_quality?.length||0} Q`;
+    buildTrack();
+    render();
+  }
+  async function loadFromServer(id) {
+    id = (id||'').trim(); if (!id) return;
+    document.getElementById('info').textContent = 'loading ' + id + ' …';
+    try {
+      const res = await fetch('/api/assignments/' + encodeURIComponent(id) + '/review',
+                              { credentials: 'same-origin' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
+      if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; }
+      v.src = body.playbackUrl; v.load();
+      dropmsg.style.display = 'none';
+      applyExport(body.export);
+    } catch (e) {
+      document.getElementById('info').textContent =
+        'could not load ' + id + ': ' + e.message + ' (are you signed in to the app?)';
+    }
+  }
+  document.getElementById('loadserver').onclick = () => loadFromServer(document.getElementById('aid').value);
+  document.getElementById('aid').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadFromServer(e.target.value); });
+  // auto-load when opened as overlay.html?assignment=<id>
+  window.addEventListener('load', () => {
+    const id = new URLSearchParams(location.search).get('assignment');
+    if (id) { document.getElementById('aid').value = id; loadFromServer(id); }
+  });
+
+  // ── drag & drop anywhere on the page ──
+  function routeFile(file) {
+    const name = (file.name || '').toLowerCase();
+    if (file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|m4v)$/.test(name)) setVideoFile(file);
+    else if (file.type === 'application/json' || name.endsWith('.json')) loadJsonFile(file);
+  }
+  ['dragenter','dragover'].forEach(ev => document.addEventListener(ev, (e) => {
+    e.preventDefault(); document.body.classList.add('drag');
+    document.getElementById('drop').classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(ev => document.addEventListener(ev, (e) => {
+    e.preventDefault();
+    if (ev === 'dragleave' && e.relatedTarget) return;
+    document.body.classList.remove('drag');
+    document.getElementById('drop').classList.remove('drag');
+  }));
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    for (const f of e.dataTransfer.files) routeFile(f);
+  });
+
+  function buildTrack() {
+    const t = document.getElementById('track'); t.innerHTML='';
+    const span = frameCount || (data.L1_tasks||[]).reduce((m,x)=>Math.max(m,x.task_end_frame),1);
+    (data.L1_tasks||[]).forEach(x=>{
+      const d=document.createElement('div'); d.className='seg l1';
+      d.style.left=(x.task_start_frame/span*100)+'%';
+      d.style.width=Math.max((x.task_end_frame-x.task_start_frame)/span*100,0.4)+'%';
+      d.title=x.task_label; t.appendChild(d);
+    });
+    const ph=document.createElement('div'); ph.className='ph'; ph.id='ph'; t.appendChild(ph);
+    t.onclick=(e)=>{ const rect=t.getBoundingClientRect(); v.currentTime=((e.clientX-rect.left)/rect.width)*(span/fps); };
+  }
+
+  function render() {
+    if (!data) return;
+    const frame = Math.round(v.currentTime * fps);
+    document.getElementById('frame').textContent = 'frame ' + frame;
+    const span = frameCount || 1;
+    const ph = document.getElementById('ph'); if (ph) ph.style.left=(frame/span*100)+'%';
+
+    const l1 = (data.L1_tasks||[]).find(x=>frame>=x.task_start_frame && frame<x.task_end_frame);
+    document.getElementById('l1').innerHTML = l1
+      ? `▶ <b>${esc(l1.task_label)||'(unlabeled)'}</b> <span class="meta">${esc(l1.difficulty)} · ${esc(l1.venue_L2)} / ${esc(l1.venue_L3)} · ${esc(l1.job)} · [${l1.task_start_frame}–${l1.task_end_frame}]</span>`
+      : `<span class="none">— no L1 task at this frame (gap) —</span>`;
+
+    const l2 = (data.L2_subtasks||[]).find(x=>frame>=x.action_start_frame && frame<x.action_end_frame);
+    document.getElementById('l2').innerHTML = l2
+      ? `• <b>${esc(l2.action_label)||'(unlabeled)'}</b> <span class="meta">L:${esc(l2.object_left)||'–'} R:${esc(l2.object_right)||'–'}</span><div class="desc">${esc(l2.description)}</div>`
+      : (l1 ? `<span class="none">• no sub-task here (gap in tiling)</span>` : '');
+
+    // nearest Q sample at/just before this frame
+    const qs = data.Q_frame_quality||[];
+    let q=null; for (const r of qs){ if (r.frame_index<=frame){ q=r; } else break; }
+    const flags=['real_work','repetitive','occluded','smudge','glare','blur'];
+    document.getElementById('q').innerHTML = q
+      ? 'Q@'+q.frame_index+' '+flags.map(f=>`<span class="${q[f]?'on':'flag'}">${f}</span>`).join(' ')
+      : '';
+  }
+  function esc(s){ return (s==null?'':String(s)).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+
+  v.addEventListener('timeupdate', render);
+  v.addEventListener('seeked', render);
+  v.addEventListener('loadedmetadata', ()=>document.getElementById('info').textContent += ` · video ${v.videoWidth}×${v.videoHeight}`);
+</script>
+</body>
+</html>

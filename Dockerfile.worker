@@ -1,0 +1,20 @@
+# ── Transcode worker: Python + ffmpeg ────────────────────────────────────────
+# A long-lived process that claims queued clips over HTTP, transcodes the MCAP
+# segments into an MP4 proxy, uploads it to R2, and reports back. It never touches
+# the database, so it needs no DB credentials — only APP_URL + TRANSCODE_SECRET + R2_*.
+
+FROM python:3.11-slim
+WORKDIR /app
+
+# ffmpeg for the stream-copy; imageio-ffmpeg also ships a binary, but the system
+# one is a reliable fallback.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/requirements.txt ./scripts/requirements.txt
+RUN pip install --no-cache-dir -r scripts/requirements.txt
+
+COPY scripts ./scripts
+
+# Scratch space for blob downloads + ffmpeg temp.
+ENV TRANSCODE_TMPDIR=/tmp
+CMD ["python", "scripts/transcode_worker.py"]

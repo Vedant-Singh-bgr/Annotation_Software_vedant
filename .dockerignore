@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env.local
+*.log
+prisma/*.db
+scripts/__pycache__
+sample.mp4
+public/*.mp4
+npm-debug.log*
+Dockerfile*
+.dockerignore
+README.md
+DEPLOY.md

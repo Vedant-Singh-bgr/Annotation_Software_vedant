@@ -1,0 +1,21 @@
+node_modules
+.next
+out
+build
+.env
+.env.local
+*.log
+.DS_Store
+next-env.d.ts
+/prisma/*.db
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Large media / demo assets — not source; keep them out of the repo
+*.mp4
+
+
+# Python
+__pycache__/
+*.pyc

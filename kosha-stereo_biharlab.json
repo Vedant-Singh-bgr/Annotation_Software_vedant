@@ -1,0 +1,228 @@
+{
+  "exportedAt": "2026-07-22T12:30:34.744Z",
+  "project": "Bihar Lab (R2)",
+  "batch": "biharlab session",
+  "clip": {
+    "id": "cmrv0y6rr0001i4dcjgbe45nv",
+    "title": "stereo_biharlab",
+    "fps": 30.0012,
+    "frameCount": 14400,
+    "sampleEveryN": 45
+  },
+  "session": {
+    "session_id": "biharlab-8min-001",
+    "session_hash": "biharlab-test",
+    "data_type": "stereo",
+    "worker_id": "w1",
+    "worksite_id": "biharlab",
+    "tenant_id": "vedant",
+    "proxy_status": "ready",
+    "segments": [
+      {
+        "order": 0,
+        "logical_path": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "r2_blob_key": "tenants/vedant/blobs/sha256/ca/94/ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "size_bytes": 800394345,
+        "start_frame": 0,
+        "end_frame": 7200
+      },
+      {
+        "order": 1,
+        "logical_path": "Bihar_lab2.mcap",
+        "sha256": "2dc9a2a4ffc84ecdadb2d349a2c753cbf4bf263c1cdc6a443d54d105cb8f5a18",
+        "r2_blob_key": "tenants/vedant/blobs/sha256/2d/c9/2dc9a2a4ffc84ecdadb2d349a2c753cbf4bf263c1cdc6a443d54d105cb8f5a18",
+        "size_bytes": 800897848,
+        "start_frame": 7200,
+        "end_frame": 14400
+      }
+    ]
+  },
+  "assignmentId": "cmrv0yn710001i4n017aue4u6",
+  "status": "APPROVED",
+  "L1_tasks": [
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "task_start_frame": 0,
+      "task_end_frame": 14397,
+      "task_label": "Inspecting_blood_sample",
+      "difficulty": "hard",
+      "venue_L2": "Lab",
+      "venue_L3": "Service Bay",
+      "job": "Lab Technician",
+      "task_confidence": 1,
+      "quality_flags": [
+        "needs_review"
+      ],
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 0
+      },
+      "source_end": {
+        "segment": "Bihar_lab2.mcap",
+        "sha256": "2dc9a2a4ffc84ecdadb2d349a2c753cbf4bf263c1cdc6a443d54d105cb8f5a18",
+        "frame_in_segment": 7197
+      }
+    }
+  ],
+  "L2_subtasks": [
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "action_start_frame": 0,
+      "action_end_frame": 145,
+      "action_label": "picking_tissue",
+      "description": "operator picks up tissue, left hand remains idle, right hands picks up tissue",
+      "object_left": "tissue",
+      "object_right": "tissue",
+      "confidence": 0.95,
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 0
+      },
+      "source_end": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 145
+      }
+    },
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "action_start_frame": 145,
+      "action_end_frame": 300,
+      "action_label": "wiping_hands",
+      "description": "operator wipes his hands, left hand wipes right, right hand wipes left",
+      "object_left": "",
+      "object_right": "",
+      "confidence": null,
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 145
+      },
+      "source_end": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 300
+      }
+    },
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "action_start_frame": 300,
+      "action_end_frame": 1546,
+      "action_label": "wearing_gloves",
+      "description": "operator starts wearing glove, left hand assisted to pull glove in the right hand, right hand assisted to pull glove in the left hand",
+      "object_left": "glove",
+      "object_right": "glove",
+      "confidence": 0.85,
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 300
+      },
+      "source_end": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 1546
+      }
+    },
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "action_start_frame": 1546,
+      "action_end_frame": 1696,
+      "action_label": "wiping_table",
+      "description": "",
+      "object_left": "",
+      "object_right": "",
+      "confidence": null,
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 1546
+      },
+      "source_end": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 1696
+      }
+    },
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "action_start_frame": 1696,
+      "action_end_frame": 1785,
+      "action_label": "idle_wait",
+      "description": "",
+      "object_left": "",
+      "object_right": "",
+      "confidence": null,
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 1696
+      },
+      "source_end": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 1785
+      }
+    },
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "action_start_frame": 1785,
+      "action_end_frame": 2017,
+      "action_label": "wiping_microscope",
+      "description": "operator wipes microscope, left hand wipes miscroscope , right hand holds microscope",
+      "object_left": "microscope",
+      "object_right": "microscope",
+      "confidence": 0.9,
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 1785
+      },
+      "source_end": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 2017
+      }
+    },
+    {
+      "video_id": "stereo_biharlab",
+      "task_id": "cmrvv2rer0001i45gaqzxl291",
+      "action_start_frame": 2017,
+      "action_end_frame": 14394,
+      "action_label": "idle_wait",
+      "description": "",
+      "object_left": "",
+      "object_right": "",
+      "confidence": null,
+      "notes": "",
+      "source_start": {
+        "segment": "Bihar_lab.mcap",
+        "sha256": "ca9486e9b6667bcaaf92fa4a762ab55a8274ffd5607510a69cd2409741334d02",
+        "frame_in_segment": 2017
+      },
+      "source_end": {
+        "segment": "Bihar_lab2.mcap",
+        "sha256": "2dc9a2a4ffc84ecdadb2d349a2c753cbf4bf263c1cdc6a443d54d105cb8f5a18",
+        "frame_in_segment": 7194
+      }
+    }
+  ],
+  "Q_frame_quality": []
+}
