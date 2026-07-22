@@ -651,6 +651,7 @@ function R2SessionBrowser({
   onDone: () => void;
 }) {
   const [prefix, setPrefix] = useState(initialPrefix || "");
+  const [folders, setFolders] = useState<string[]>([]);
   const [sessions, setSessions] = useState<R2Session[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -675,6 +676,38 @@ function R2SessionBrowser({
       setLoading(false);
     }
   }, []);
+
+  // Folder drill-down: list the sub-"folders" at a prefix so you can click
+  // through tenants → worksites → workers instead of typing the full path.
+  const browse = useCallback(async (p: string) => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const data = await api(`/api/admin/r2/list?prefix=${encodeURIComponent(p)}`, "GET");
+      setPrefix(p);
+      setFolders(data.prefixes ?? []);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Open at the batch's configured prefix (or bucket root).
+  useEffect(() => {
+    browse(initialPrefix || "");
+  }, [browse, initialPrefix]);
+
+  // Breadcrumb segments from the current prefix, each linking to that level.
+  const crumbs: { label: string; path: string }[] = [];
+  {
+    const parts = prefix.split("/").filter(Boolean);
+    let acc = "";
+    for (const part of parts) {
+      acc += part + "/";
+      crumbs.push({ label: part, path: acc });
+    }
+  }
 
   function toggle(key: string) {
     setSelected((prev) => {
@@ -712,10 +745,44 @@ function R2SessionBrowser({
   return (
     <div className="mt-3 space-y-2 rounded-md border border-ink-700 bg-ink-800/40 p-3">
       <p className="text-xs text-slate-400">
-        List session <code>manifest.json</code> files under an R2 prefix and import
-        many at once. Point the prefix at a worksite/worker (e.g.{" "}
-        <code>tenants/&lt;t&gt;/worksites/</code>) to skip the content blobs.
+        Click through the folders to a worksite/worker, then{" "}
+        <b>List sessions here</b> to find every <code>manifest.json</code> under it
+        and import many at once. Or type a prefix directly.
       </p>
+
+      {/* Breadcrumb */}
+      <div className="flex flex-wrap items-center gap-1 text-xs">
+        <button className="text-brand-400 hover:underline" onClick={() => browse("")}>
+          bucket
+        </button>
+        {crumbs.map((c) => (
+          <span key={c.path} className="flex items-center gap-1">
+            <span className="text-slate-600">/</span>
+            <button className="text-brand-400 hover:underline" onClick={() => browse(c.path)}>
+              {c.label}
+            </button>
+          </span>
+        ))}
+      </div>
+
+      {/* Clickable sub-folders at the current level */}
+      {folders.length > 0 && (
+        <ul className="flex flex-wrap gap-1">
+          {folders.map((f) => (
+            <li key={f}>
+              <button
+                onClick={() => browse(f)}
+                disabled={loading}
+                className="flex items-center gap-1 rounded border border-ink-700 px-2 py-1 text-xs text-slate-200 hover:bg-ink-700"
+              >
+                📁 {f.replace(prefix, "").replace(/\/$/, "")}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Manual prefix + list action */}
       <div className="flex gap-2">
         <input
           className="input font-mono text-xs"
@@ -724,11 +791,20 @@ function R2SessionBrowser({
           placeholder="tenants/<tenant>/worksites/"
         />
         <button
+          className="btn-ghost shrink-0 text-xs"
+          onClick={() => browse(prefix)}
+          disabled={loading}
+          title="Show folders at this prefix"
+        >
+          Go
+        </button>
+        <button
           className="btn-primary shrink-0 text-xs"
           onClick={() => load(prefix)}
           disabled={loading}
+          title="Scan for session manifests under the current folder"
         >
-          {loading ? "Loading…" : "List sessions"}
+          {loading ? "Loading…" : "List sessions here"}
         </button>
       </div>
 
