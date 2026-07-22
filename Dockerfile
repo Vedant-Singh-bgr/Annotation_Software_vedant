@@ -26,11 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
-# Prisma schema + generated client + the CLI (via node_modules) for migrate deploy.
 COPY --from=build /app/prisma ./prisma
-COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=build /app/node_modules/prisma ./node_modules/prisma
-COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
+# Full node_modules (overlays the standalone's minimal traced set). Needed because
+# `prisma migrate deploy` on boot pulls in the CLI's whole transitive dependency
+# tree (@prisma/config -> effect, etc.) that a cherry-picked copy can't cover.
+COPY --from=build /app/node_modules ./node_modules
 
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
