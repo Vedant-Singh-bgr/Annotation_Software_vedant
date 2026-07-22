@@ -57,6 +57,9 @@ def load_dotenv(path: str) -> None:
 
 load_dotenv(os.path.join(BASE, ".env"))
 APP_URL = os.environ.get("APP_URL", "http://localhost:3000").rstrip("/")
+# Hosts (e.g. Railway) often show the domain without a scheme; urllib needs one.
+if not APP_URL.startswith(("http://", "https://")):
+    APP_URL = "https://" + APP_URL
 SECRET = os.environ.get("TRANSCODE_SECRET", "")
 
 
