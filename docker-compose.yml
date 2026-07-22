@@ -1,3 +1,16 @@
+# Full-stack local smoke test: Postgres + web + transcode worker, the same three
+# pieces you deploy to Railway. Brings up the entire server-side pipeline so you
+# can verify transcoding happens off-device before deploying.
+#
+#   docker compose up --build          # start everything
+#   docker compose up --build db web   # just DB + web (skip the worker)
+#   docker compose down -v             # stop and wipe the DB volume
+#
+# R2 credentials are read from your shell env or the .env file (compose loads it
+# automatically). Without R2 set, the app still runs in demo mode; the worker
+# needs R2 to actually fetch MCAP blobs. The AUTH/TRANSCODE secrets below are
+# throwaway values for LOCAL use only — never reuse them in production.
+
 services:
   db:
     image: postgres:16-alpine
@@ -16,6 +29,46 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: annotation-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Inside the compose network the DB host is "db", not localhost.
+      DATABASE_URL: "postgresql://annotator:annotator@db:5432/annotation?schema=public"
+      AUTH_SECRET: "${AUTH_SECRET:-local-dev-secret-change-me-32-characters-min}"
+      TRANSCODE_SECRET: "${TRANSCODE_SECRET:-local-dev-transcode-secret}"
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
+      R2_BUCKET: "${R2_BUCKET:-}"
+      R2_URL_TTL: "${R2_URL_TTL:-3600}"
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: annotation-worker
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      # The worker talks to the web service over the compose network — no DB creds.
+      APP_URL: "http://web:3000"
+      TRANSCODE_SECRET: "${TRANSCODE_SECRET:-local-dev-transcode-secret}"
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
+      R2_BUCKET: "${R2_BUCKET:-}"
 
 volumes:
   annotation_pgdata:
