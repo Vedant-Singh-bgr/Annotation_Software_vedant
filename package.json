@@ -13,7 +13,11 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts"
+    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
+    "stack:up": "docker compose up --build",
+    "stack:down": "docker compose down -v",
+    "stack:logs": "docker compose logs -f worker",
+    "stack:seed": "node scripts/seed-stack.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
