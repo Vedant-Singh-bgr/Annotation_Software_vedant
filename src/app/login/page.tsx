@@ -40,11 +40,6 @@ function LoginForm() {
     }
   }
 
-  function fill(demoEmail: string) {
-    setEmail(demoEmail);
-    setPassword("password123");
-  }
-
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
@@ -89,30 +84,6 @@ function LoginForm() {
             {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
-
-        <div className="mt-6 rounded-lg border border-ink-700 bg-ink-900/60 p-4 text-xs text-slate-400">
-          <p className="mb-2 font-medium text-slate-300">Demo accounts (password: password123)</p>
-          <ul className="space-y-1">
-            <li>
-              <button className="text-brand-400 hover:underline" onClick={() => fill("admin@platform.dev")}>
-                admin@platform.dev
-              </button>{" "}
-              — Platform admin
-            </li>
-            <li>
-              <button className="text-brand-400 hover:underline" onClick={() => fill("lead@labelco.dev")}>
-                lead@labelco.dev
-              </button>{" "}
-              — Org admin (LabelCo)
-            </li>
-            <li>
-              <button className="text-brand-400 hover:underline" onClick={() => fill("ann@labelco.dev")}>
-                ann@labelco.dev
-              </button>{" "}
-              — Annotator
-            </li>
-          </ul>
-        </div>
       </div>
     </div>
   );
