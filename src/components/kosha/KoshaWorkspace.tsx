@@ -704,6 +704,18 @@ export default function KoshaWorkspace(props: Props) {
       } else if (e.key.toLowerCase() === "o") {
         setPendingOut(currentFrame);
         flash(`Out: frame ${currentFrame}`);
+      } else if (e.key.toLowerCase() === "n") {
+        // Add a sub-task to the selected task without hunting for a button.
+        // Works from the list view and from inside a sub-task's editor alike:
+        // the parent task stays selected either way, and createSub opens the new
+        // sub-task's editor, so the next one is always one keystroke away.
+        e.preventDefault();
+        if (!selectedTask) {
+          flash("Select a task first, then press N to add a sub-task.");
+        } else {
+          setPanelView("editor");
+          createSub();
+        }
       } else if (e.code === "BracketLeft" || e.code === "BracketRight") {
         // [ / ] nudge the selected block's start/end by 1 frame (Shift = 10).
         // Default grows the span outward; Alt reverses to trim inward.
@@ -719,7 +731,7 @@ export default function KoshaWorkspace(props: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [currentFrame, togglePlay, seekFrame, flash, nudge]);
+  }, [currentFrame, togglePlay, seekFrame, flash, nudge, selectedTask, createSub]);
 
   // ── live QA (guideline §6) ────────────────────────────────────────────────
   const validation = validateSubmission({
@@ -948,6 +960,7 @@ export default function KoshaWorkspace(props: Props) {
           <span className="text-ink-400">(In {pendingIn ?? "–"} · Out {pendingOut ?? "–"})</span> ·{" "}
           <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">[/]</kbd> grow selected start/end 1f
           <span className="text-ink-400"> (Shift 10f, Alt trims)</span> ·{" "}
+          <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">N</kbd> new sub-task ·{" "}
           <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">Esc</kbd> clear
         </p>
       </div>

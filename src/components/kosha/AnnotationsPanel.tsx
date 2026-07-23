@@ -292,7 +292,7 @@ function ListView({
 // ── editor view ─────────────────────────────────────────────────────────────
 
 function EditorView(props: Props & { task: Task; sub: SubTask | null }) {
-  const { task, sub, onBackToList, editable, onDeleteTask, onDeleteSub } = props;
+  const { task, sub, onBackToList, editable, onCreateSub, onDeleteTask, onDeleteSub } = props;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -303,12 +303,27 @@ function EditorView(props: Props & { task: Task; sub: SubTask | null }) {
           ‹ All tasks
         </button>
         {editable && (
-          <button
-            onClick={() => (sub ? onDeleteSub(sub.id) : onDeleteTask(task.id))}
-            className="text-xs text-accent-red transition-colors duration-150 hover:underline"
-          >
-            Delete {sub ? "sub-task" : "task"}
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Add a sibling without leaving the sub-task view. The parent task
+                stays selected while editing one of its sub-tasks, so onCreateSub
+                already targets the right task — it tiles on from the last
+                sub-task's end and drops straight into the new one's editor. */}
+            {sub && (
+              <button
+                onClick={() => onCreateSub()}
+                title="Add another sub-task to this task and edit it (N)"
+                className="text-xs text-ink-500 transition-colors duration-150 hover:text-ink-800"
+              >
+                + New sub-task
+              </button>
+            )}
+            <button
+              onClick={() => (sub ? onDeleteSub(sub.id) : onDeleteTask(task.id))}
+              className="text-xs text-accent-red transition-colors duration-150 hover:underline"
+            >
+              Delete {sub ? "sub-task" : "task"}
+            </button>
+          </div>
         )}
       </div>
       {sub ? <SubTaskEditor {...props} sub={sub} /> : <TaskEditor {...props} />}
