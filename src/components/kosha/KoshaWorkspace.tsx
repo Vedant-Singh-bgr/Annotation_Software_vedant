@@ -8,6 +8,7 @@ import { Task, SubTask, FrameQuality, Taxonomies, api, coverage } from "./shared
 import TasksPanel from "./TasksPanel";
 import SubTasksPanel from "./SubTasksPanel";
 import QualityPanel from "./QualityPanel";
+import VideoOverlay from "./VideoOverlay";
 
 type Props = {
   assignmentId: string;
@@ -60,6 +61,7 @@ export default function KoshaWorkspace(props: Props) {
 
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [showOverlay, setShowOverlay] = useState(true); // live label HUD on the video
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
@@ -539,7 +541,7 @@ export default function KoshaWorkspace(props: Props) {
           </span>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-ink-700 bg-black">
+        <div className="relative overflow-hidden rounded-lg border border-ink-700 bg-black">
           <video
             ref={videoRef}
             src={videoUrl}
@@ -547,12 +549,23 @@ export default function KoshaWorkspace(props: Props) {
             onClick={togglePlay}
             playsInline
           />
+          {showOverlay && (
+            <VideoOverlay tasks={tasks} quality={quality} currentFrame={currentFrame} />
+          )}
         </div>
 
         {/* transport */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button onMouseDown={keepFocus} onClick={togglePlay} className="btn-ghost w-20">
             {playing ? "❚❚ Pause" : "▶ Play"}
+          </button>
+          <button
+            onMouseDown={keepFocus}
+            onClick={() => setShowOverlay((v) => !v)}
+            title="Toggle the live label overlay on the video"
+            className={`btn-ghost ${showOverlay ? "text-brand-400" : "text-slate-500"}`}
+          >
+            ⊞ Overlay
           </button>
           <button onMouseDown={keepFocus} onClick={() => seekFrame(currentFrame - 10)} className="btn-ghost">−10f</button>
           <button onMouseDown={keepFocus} onClick={() => seekFrame(currentFrame - 1)} className="btn-ghost">−1f</button>
