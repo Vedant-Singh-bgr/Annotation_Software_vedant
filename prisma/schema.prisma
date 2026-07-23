@@ -32,6 +32,7 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  active    Boolean  @default(true) // soft-archive: false locks out all its users
   createdAt DateTime @default(now())
 
   users    User[]
@@ -44,6 +45,7 @@ model User {
   name           String
   passwordHash   String
   role           String
+  active         Boolean       @default(true) // soft-deactivate: false = cannot sign in
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime      @default(now())

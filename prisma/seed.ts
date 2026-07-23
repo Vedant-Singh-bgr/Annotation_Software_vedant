@@ -34,15 +34,16 @@ const TAXONOMY = {
 };
 
 async function main() {
-  const password = await bcrypt.hash("password123", 10);
+  const password = await bcrypt.hash("anntt@132", 10);
+  const adminPassword = await bcrypt.hash("data@321", 10);
 
   const platformAdmin = await prisma.user.upsert({
-    where: { email: "admin@platform.dev" },
+    where: { email: "vedant@koshalabs.ai" },
     update: {},
     create: {
-      email: "admin@platform.dev",
+      email: "vedant@koshalabs.ai",
       name: "Platform Admin",
-      passwordHash: password,
+      passwordHash: adminPassword,
       role: "PLATFORM_ADMIN",
     },
   });
@@ -183,7 +184,7 @@ async function main() {
   });
 
   console.log("\n✅ Seed complete.\n");
-  console.log("Sign in (password: password123):");
+  console.log("Sign in:");
   console.log(`  • Platform admin : ${platformAdmin.email}`);
   console.log(`  • Org admin       : ${orgAdmin.email}`);
   console.log(`  • Annotators      : ${annotator1.email}, ${annotator2.email}\n`);

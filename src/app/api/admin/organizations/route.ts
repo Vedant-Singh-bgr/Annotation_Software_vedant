@@ -52,3 +52,23 @@ export async function POST(req: NextRequest) {
     return { organization: org };
   });
 }
+
+// Platform admin archives / restores an organization. Soft only — archiving
+// locks out all of the org's users (they can't sign in) but preserves every
+// project, clip, and annotation. Restoring re-enables them.
+export async function PATCH(req: NextRequest) {
+  return handle(async () => {
+    await requireRole("PLATFORM_ADMIN");
+    const body = await req.json().catch(() => null);
+    const orgId = String(body?.orgId ?? "");
+    const active = Boolean(body?.active);
+    if (!orgId) badRequest("orgId is required.");
+
+    const organization = await prisma.organization.update({
+      where: { id: orgId },
+      data: { active },
+      select: { id: true, name: true, active: true },
+    });
+    return { organization };
+  });
+}

@@ -79,11 +79,18 @@ export async function getSession(): Promise<SessionUser | null> {
         email: true,
         name: true,
         role: true,
+        active: true,
         organizationId: true,
+        organization: { select: { active: true } },
       },
     });
     if (!user) return null;
-    return { ...user, role: user.role as Role };
+    // Deactivated user, or a user whose org has been archived, is logged out.
+    if (!user.active || (user.organization && !user.organization.active)) return null;
+    const { active, organization, ...rest } = user;
+    void active;
+    void organization;
+    return { ...rest, role: user.role as Role };
   } catch {
     return null;
   }
