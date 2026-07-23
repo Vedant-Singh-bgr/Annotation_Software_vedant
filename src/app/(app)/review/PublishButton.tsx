@@ -39,14 +39,14 @@ export default function PublishButton({
   // Failures are recorded on the assignment, so a stale error stays visible until
   // the next successful publish.
   const state = exportError
-    ? { text: "publish failed", tone: "text-red-400", title: exportError }
+    ? { text: "publish failed", tone: "text-accent-red", title: exportError }
     : exportR2Key
       ? {
           text: exportR2Key.split("/").slice(-2).join("/"),
-          tone: "text-slate-500",
+          tone: "text-ink-400",
           title: `${exportR2Key}\npublished ${exportedAt ? new Date(exportedAt).toLocaleString() : "—"}`,
         }
-      : { text: "not published", tone: "text-slate-600", title: "No export in R2 yet." };
+      : { text: "not published", tone: "text-ink-300", title: "No export in R2 yet." };
 
   return (
     <div className="flex shrink-0 items-center gap-2">
@@ -56,7 +56,7 @@ export default function PublishButton({
       <button
         onClick={publish}
         disabled={busy}
-        className="rounded border border-ink-700 px-2 py-1 text-xs text-slate-300 hover:bg-ink-800 disabled:opacity-50"
+        className="rounded-lg border border-ink-900/10 px-2 py-1 text-xs text-ink-700 transition-colors duration-150 hover:border-ink-900/20 hover:bg-ink-900/5 disabled:opacity-50"
         title="Write the export JSON to R2 next to the clip's MP4 proxy"
       >
         {busy ? "…" : exportR2Key ? "Re-publish" : "Publish"}

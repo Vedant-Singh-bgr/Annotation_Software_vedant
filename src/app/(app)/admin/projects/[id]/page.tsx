@@ -76,13 +76,16 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2 text-sm text-slate-400">
-        <Link href="/admin/projects" className="hover:text-slate-200">
+      <div className="mb-4 flex items-center gap-2 text-sm text-ink-500">
+        <Link
+          href="/admin/projects"
+          className="transition-colors duration-200 hover:text-ink-900 hover:underline hover:decoration-ink-900/20 hover:underline-offset-2"
+        >
           ← Projects
         </Link>
         <span>/</span>
-        <span className="text-slate-200">{project.name}</span>
-        <span className="text-slate-600">· {project.organization.name}</span>
+        <span className="text-ink-800">{project.name}</span>
+        <span className="text-ink-400">· {project.organization.name}</span>
       </div>
 
       <BatchManager project={data} r2Configured={isR2Configured()} />

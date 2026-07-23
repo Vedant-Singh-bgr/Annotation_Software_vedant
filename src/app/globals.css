@@ -2,8 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme tokens — space-separated RGB triples consumed by tailwind.config.ts
+   via rgb(var(--x) / <alpha-value>). Light values are exact conversions of
+   the original hex palette; .dark inverts the same warm, editorial system. */
 :root {
+  color-scheme: light;
+
+  /* Paper surfaces */
+  --paper: 255 255 255; /* #FFFFFF */
+  --paper-50: 250 250 249; /* #FAFAF9 */
+  --paper-100: 243 243 242; /* #F3F3F2 */
+  --paper-200: 236 235 233; /* #ECEBE9 */
+  --surface: 255 255 255; /* raised chrome: cards, nav, popovers */
+
+  /* Warm foreground (ink) ramp */
+  --ink-900: 40 40 40; /* #282828 */
+  --ink-800: 60 56 54; /* #3C3836 */
+  --ink-700: 80 73 69; /* #504945 */
+  --ink-600: 107 104 102; /* #6B6866 */
+  --ink-500: 103 103 103; /* #676767 */
+  --ink-400: 150 150 150; /* #969696 */
+  --ink-300: 180 178 174; /* #B4B2AE */
+
+  /* Muted print-like accent inks */
+  --accent-red: 173 33 17; /* #AD2111 */
+  --accent-blue: 14 158 228; /* #0E9EE4 */
+  --accent-green: 66 123 88; /* #427B58 */
+  --accent-lime: 156 195 85; /* #9CC355 */
+  --accent-yellow: 181 118 20; /* #B57614 */
+  --accent-orange: 175 58 3; /* #AF3A03 */
+  --accent-purple: 143 63 113; /* #8F3F71 */
+
+  /* Non-color-token oddments */
+  --shadow-ring: 0 0 0 3px rgba(14, 158, 228, 0.15);
+  --shadow-card: 0 1px 2px rgba(40, 40, 40, 0.04);
+  --selection-bg: #d0d0d0;
+}
+
+.dark {
   color-scheme: dark;
+
+  /* Warm near-black paper */
+  --paper: 29 30 31; /* #1D1E1F */
+  --paper-50: 35 36 37; /* #232425 */
+  --paper-100: 42 43 44; /* #2A2B2C */
+  --paper-200: 50 51 52; /* #323334 */
+  --surface: 35 36 37; /* #232425 — cards sit slightly above the page */
+
+  /* Ink ramp inverted to warm off-whites/greys */
+  --ink-900: 232 230 227; /* #E8E6E3 */
+  --ink-800: 213 211 207; /* #D5D3CF */
+  --ink-700: 184 182 178; /* #B8B6B2 */
+  --ink-600: 150 150 145; /* #969691 */
+  --ink-500: 138 138 134; /* #8A8A86 */
+  --ink-400: 111 111 107; /* #6F6F6B */
+  --ink-300: 86 85 80; /* #565550 */
+
+  /* Accents brightened just enough for dark-bg contrast */
+  --accent-red: 211 84 63; /* #D3543F */
+  --accent-blue: 63 179 239; /* #3FB3EF */
+  --accent-green: 127 174 143; /* #7FAE8F */
+  --accent-lime: 156 195 85; /* #9CC355 */
+  --accent-yellow: 217 155 61; /* #D99B3D */
+  --accent-orange: 217 119 66; /* #D97742 */
+  --accent-purple: 176 106 149; /* #B06A95 */
+
+  --shadow-ring: 0 0 0 3px rgba(63, 179, 239, 0.2);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --selection-bg: #4a4a46;
 }
 
 html,
@@ -11,33 +77,55 @@ body {
   height: 100%;
 }
 
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--ink-400)) rgb(var(--paper));
+}
+
 body {
-  @apply bg-ink-950 text-slate-200 antialiased;
+  @apply bg-paper font-sans text-[15px] text-ink-900 antialiased;
+}
+
+::selection {
+  background-color: var(--selection-bg);
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply relative inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-sm text-ink-900 outline-none transition-[background-color,border-color,box-shadow,transform,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-accent-blue/40 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
+  /* Primary action: solid warm ink, square 8px corners. Token-backed, so dark
+     mode inverts it automatically (light text-on-ink → dark ink-on-light). */
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-500;
+    @apply btn rounded-lg border border-transparent bg-ink-900 font-medium text-paper hover:bg-ink-800;
   }
   .btn-ghost {
-    @apply btn border border-ink-600 text-slate-200 hover:bg-ink-800;
+    @apply btn border border-ink-900/10 bg-transparent hover:border-ink-900/20 hover:bg-ink-900/[0.03];
+  }
+  .btn-plain {
+    @apply btn border border-transparent hover:bg-ink-900/5 active:bg-ink-900/10;
   }
   .btn-danger {
-    @apply btn border border-red-800/60 text-red-300 hover:bg-red-950/40;
+    @apply btn border border-accent-red/25 text-accent-red hover:border-accent-red/40 hover:bg-accent-red/5;
   }
   .card {
-    @apply rounded-lg border border-ink-700 bg-ink-900;
+    @apply rounded-[10px] border border-ink-900/10 bg-surface shadow-card;
   }
   .input {
-    @apply w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-brand-500;
+    @apply w-full rounded-[10px] border border-ink-900/15 bg-ink-900/[0.03] px-3 py-2 text-sm text-ink-900 outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-400 focus:border-accent-blue/60 focus:shadow-ring;
   }
   .label {
-    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400;
+    @apply mb-1.5 block text-[11px] font-medium uppercase tracking-[0.08em] text-ink-500;
   }
   .badge {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium;
+  }
+  /* Understated underlined text link (thinkingmachines.ai style) */
+  .link {
+    @apply text-ink-800 underline decoration-ink-900/25 underline-offset-2 transition-colors duration-200 hover:text-ink-900 hover:decoration-ink-900/50;
+  }
+  /* Spaced-out Chakra Petch wordmark treatment */
+  .wordmark {
+    @apply font-display text-[15px] font-medium uppercase tracking-[0.11em] text-ink-500;
   }
 }

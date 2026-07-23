@@ -18,9 +18,9 @@ export default async function OrganizationsPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <div>
-        <h1 className="mb-4 text-xl font-semibold text-white">Organizations</h1>
+        <h1 className="mb-4 font-serif text-2xl font-medium text-ink-900">Organizations</h1>
         {orgs.length === 0 ? (
-          <div className="card p-8 text-center text-sm text-slate-500">
+          <div className="card p-8 text-center text-sm text-ink-400">
             No organizations yet. Create the first annotation company →
           </div>
         ) : (
@@ -28,21 +28,21 @@ export default async function OrganizationsPage() {
             {orgs.map((o) => (
               <div
                 key={o.id}
-                className={`card flex items-center gap-4 p-4 ${o.active ? "" : "opacity-60"}`}
+                className={`card flex items-center gap-4 p-5 ${o.active ? "" : "opacity-60"}`}
               >
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-ink-700 text-sm font-semibold text-slate-200">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-ink-900/5 text-sm font-medium text-ink-700">
                   {o.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 font-medium text-slate-100">
+                  <div className="flex items-center gap-2 font-medium text-ink-900">
                     {o.name}
                     {!o.active && (
-                      <span className="badge bg-red-950/50 text-red-300">Archived</span>
+                      <span className="badge border-accent-red/25 bg-accent-red/5 text-accent-red">Archived</span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-500">/{o.slug}</div>
+                  <div className="text-xs text-ink-400">/{o.slug}</div>
                 </div>
-                <div className="text-right text-xs text-slate-400">
+                <div className="text-right text-xs text-ink-500">
                   <div>{o._count.users} users</div>
                   <div>{o._count.projects} projects</div>
                 </div>

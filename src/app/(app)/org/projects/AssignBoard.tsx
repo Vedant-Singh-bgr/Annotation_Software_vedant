@@ -53,19 +53,19 @@ export default function AssignBoard({
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-white">Assignments</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-1 font-serif text-2xl font-medium text-ink-900">Assignments</h1>
+      <p className="mb-6 text-sm text-ink-500">
         Assign clips from your projects to annotators on your team.
       </p>
 
       {err && (
-        <p className="mb-4 rounded-md bg-red-950/50 px-3 py-2 text-sm text-red-300">
+        <p className="mb-4 rounded-lg border border-accent-red/25 bg-accent-red/5 px-3 py-2 text-sm text-accent-red">
           {err}
         </p>
       )}
 
       {projects.length === 0 && (
-        <div className="card p-8 text-center text-sm text-slate-500">
+        <div className="card py-12 text-center text-sm text-ink-400">
           No projects assigned to your organization yet. The platform admin
           creates projects and imports clips.
         </div>
@@ -73,32 +73,32 @@ export default function AssignBoard({
 
       <div className="space-y-6">
         {projects.map((p) => (
-          <div key={p.id} className="card p-4">
-            <h2 className="mb-3 font-medium text-slate-100">{p.name}</h2>
+          <div key={p.id} className="card p-5">
+            <h2 className="mb-3 text-sm font-medium text-ink-900">{p.name}</h2>
             {p.batches.every((b) => b.clips.length === 0) ? (
-              <p className="text-xs text-slate-500">No clips imported yet.</p>
+              <p className="text-xs text-ink-400">No clips imported yet.</p>
             ) : (
               <div className="space-y-4">
                 {p.batches.map((b) =>
                   b.clips.length === 0 ? null : (
                     <div key={b.id}>
-                      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-500">
                         {b.name}
                       </div>
                       <div className="space-y-2">
                         {b.clips.map((c) => (
                           <div
                             key={c.id}
-                            className="flex flex-wrap items-center gap-3 rounded-md border border-ink-700 p-3"
+                            className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-900/10 p-3 transition-colors duration-150 hover:bg-ink-900/[0.03]"
                           >
-                            <span className="text-slate-500">▶</span>
-                            <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                            <span className="text-ink-400">▶</span>
+                            <span className="min-w-0 flex-1 truncate text-sm text-ink-800">
                               {c.title}
                             </span>
 
                             <div className="flex flex-wrap items-center gap-1">
                               {c.assignments.length === 0 ? (
-                                <span className="text-xs text-slate-500">
+                                <span className="text-xs text-ink-400">
                                   Unassigned
                                 </span>
                               ) : (
@@ -111,16 +111,16 @@ export default function AssignBoard({
                                         ? "Open to review (approve / reject)"
                                         : "Open annotation"
                                     }
-                                    className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-slate-300 hover:border-brand-500 hover:text-white ${
+                                    className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-ink-700 transition-colors duration-150 hover:border-accent-blue/60 hover:text-ink-900 ${
                                       a.status === "SUBMITTED"
-                                        ? "border-amber-700/60 bg-amber-950/30"
-                                        : "border-transparent bg-ink-800"
+                                        ? "border-accent-yellow/30 bg-accent-yellow/10"
+                                        : "border-transparent bg-ink-900/5"
                                     }`}
                                   >
                                     {a.annotator.name}
                                     <StatusBadge status={a.status} />
                                     {a.status === "SUBMITTED" && (
-                                      <span className="text-amber-300">· Review →</span>
+                                      <span className="text-accent-yellow">· Review →</span>
                                     )}
                                   </Link>
                                 ))
@@ -129,7 +129,7 @@ export default function AssignBoard({
 
                             <div className="ml-auto flex items-center gap-2">
                               <select
-                                className="rounded-md border border-ink-600 bg-ink-800 px-2 py-1 text-xs text-slate-100"
+                                className="rounded-lg border border-ink-900/15 bg-ink-900/[0.03] px-2 py-1 text-xs text-ink-900 transition-colors duration-150 focus:border-accent-blue/60 focus:outline-none"
                                 value={pick[c.id] ?? ""}
                                 onChange={(e) =>
                                   setPick((prev) => ({

@@ -38,14 +38,14 @@ export default function NewOrgForm() {
   }
 
   return (
-    <form onSubmit={submit} className="card h-fit space-y-3 p-4">
-      <h2 className="text-sm font-semibold text-white">New organization</h2>
+    <form onSubmit={submit} className="card h-fit space-y-4 p-5">
+      <h2 className="text-sm font-medium text-ink-900">New organization</h2>
       <div>
         <label className="label">Company name</label>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
       </div>
-      <div className="border-t border-ink-700 pt-3">
-        <p className="mb-2 text-xs text-slate-500">
+      <div className="border-t border-ink-900/10 pt-3">
+        <p className="mb-2 text-xs text-ink-400">
           Optional: create their first org admin.
         </p>
         <div className="space-y-2">
@@ -55,7 +55,7 @@ export default function NewOrgForm() {
         </div>
       </div>
       {msg && (
-        <p className={`text-xs ${msg.ok ? "text-green-400" : "text-red-400"}`}>{msg.text}</p>
+        <p className={`text-xs ${msg.ok ? "text-accent-green" : "text-accent-red"}`}>{msg.text}</p>
       )}
       <button type="submit" className="btn-primary w-full" disabled={busy}>
         {busy ? "Creating…" : "Create organization"}

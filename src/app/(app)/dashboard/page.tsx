@@ -24,29 +24,29 @@ async function AnnotatorDashboard({ userId }: { userId: string }) {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-white">My tasks</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-1 font-serif text-2xl font-medium text-ink-900">My tasks</h1>
+      <p className="mb-6 text-sm text-ink-500">
         {assignments.length} clip{assignments.length === 1 ? "" : "s"} assigned to you
       </p>
 
       {assignments.length === 0 ? (
         <EmptyState message="No clips assigned yet. Your org admin will assign work here." />
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           {assignments.map((a) => (
             <Link
               key={a.id}
               href={`/annotate/${a.id}`}
-              className="card flex items-center gap-4 p-4 hover:border-brand-500"
+              className="card flex items-center gap-4 p-5 transition-colors duration-150 hover:border-ink-900/20 hover:bg-ink-900/[0.03]"
             >
-              <div className="grid h-10 w-16 place-items-center rounded bg-ink-800 text-slate-500">
+              <div className="grid h-10 w-16 place-items-center rounded-lg bg-paper-50 text-ink-400">
                 ▶
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-slate-100">
+                <div className="truncate font-medium text-ink-900">
                   {a.clip.title}
                 </div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-ink-400">
                   {a.clip.batch.project.name} · {a.clip.batch.name} ·{" "}
                   {a._count.tasks} task{a._count.tasks === 1 ? "" : "s"}
                 </div>
@@ -77,7 +77,7 @@ async function OrgAdminDashboard({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <h1 className="mb-6 text-xl font-semibold text-white">Overview</h1>
+      <h1 className="mb-6 font-serif text-2xl font-medium text-ink-900">Overview</h1>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Projects" value={projectCount} />
         <Stat label="Clips" value={clipCount} />
@@ -85,15 +85,15 @@ async function OrgAdminDashboard({ orgId }: { orgId: string }) {
         <Stat label="Submitted" value={statusMap["SUBMITTED"] ?? 0} />
       </div>
 
-      <h2 className="mb-3 mt-8 text-sm font-medium text-slate-300">Work status</h2>
+      <h2 className="mb-3 mt-8 text-sm font-medium text-ink-900">Work status</h2>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         {["ASSIGNED", "IN_PROGRESS", "SUBMITTED", "APPROVED", "REJECTED"].map(
           (s) => (
-            <div key={s} className="card p-4">
+            <div key={s} className="card p-5">
               <div className="mb-2">
                 <StatusBadge status={s} />
               </div>
-              <div className="text-2xl font-semibold text-white">
+              <div className="font-serif text-3xl text-ink-900">
                 {statusMap[s] ?? 0}
               </div>
             </div>
@@ -120,7 +120,7 @@ async function PlatformDashboard() {
 
   return (
     <div>
-      <h1 className="mb-6 text-xl font-semibold text-white">Platform overview</h1>
+      <h1 className="mb-6 font-serif text-2xl font-medium text-ink-900">Platform overview</h1>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Organizations" value={orgCount} />
         <Stat label="Projects" value={projectCount} />
@@ -141,16 +141,16 @@ async function PlatformDashboard() {
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="card p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-white">{value}</div>
+    <div className="card p-5">
+      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-500">{label}</div>
+      <div className="mt-1.5 font-serif text-3xl text-ink-900">{value}</div>
     </div>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="card grid place-items-center p-12 text-center text-sm text-slate-500">
+    <div className="card grid place-items-center py-16 text-center text-sm text-ink-400">
       {message}
     </div>
   );

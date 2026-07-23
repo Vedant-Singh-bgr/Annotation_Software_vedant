@@ -24,8 +24,8 @@ export default async function TaxonomiesPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-white">Approved lists</h1>
-      <p className="mb-6 max-w-2xl text-sm text-slate-400">
+      <h1 className="mb-1 font-serif text-2xl font-medium text-ink-900">Approved lists</h1>
+      <p className="mb-6 max-w-2xl text-sm text-ink-500">
         Appendix A of the guideline. Annotators select venue and job values from
         these lists only — they cannot free-type. Seeded with placeholders; edit
         them to your final approved values before a batch ships.

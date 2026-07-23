@@ -49,13 +49,13 @@ export default function MemberActions({
       <button
         onClick={toggle}
         disabled={busy}
-        className={`text-xs hover:underline disabled:opacity-50 ${
-          active ? "text-red-400" : "text-green-400"
+        className={`text-xs underline-offset-2 transition-colors duration-150 hover:underline disabled:opacity-50 ${
+          active ? "text-accent-red" : "text-accent-green"
         }`}
       >
         {busy ? "…" : active ? "Deactivate" : "Reactivate"}
       </button>
-      {err && <div className="text-[11px] text-red-400">{err}</div>}
+      {err && <div className="text-[11px] text-accent-red">{err}</div>}
     </div>
   );
 }

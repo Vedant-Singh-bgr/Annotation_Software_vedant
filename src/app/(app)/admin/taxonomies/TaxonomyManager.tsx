@@ -69,38 +69,38 @@ function ListColumn({ type, items }: { type: TaxonomyType; items: Item[] }) {
   }
 
   return (
-    <div className="card p-4">
-      <h2 className="mb-1 text-sm font-semibold text-white">
+    <div className="card p-5">
+      <h2 className="mb-1 text-sm font-medium text-ink-900">
         {TAXONOMY_LABELS[type]}
       </h2>
-      <div className="mb-3 text-xs text-slate-500">{items.length} values</div>
+      <div className="mb-3 text-xs text-ink-400">{items.length} values</div>
 
       <ul className="mb-3 space-y-1">
         {items.map((it) => (
           <li
             key={it.id}
-            className="flex items-center gap-2 rounded border border-ink-700 px-2 py-1 text-sm"
+            className="flex items-center gap-2 rounded-lg border border-ink-900/10 px-2 py-1 text-sm"
           >
-            <span className={it.active ? "text-slate-200" : "text-slate-600 line-through"}>
+            <span className={it.active ? "text-ink-800" : "text-ink-300 line-through"}>
               {it.value}
             </span>
             <button
               onClick={() => toggle(it.id, it.active)}
-              className="ml-auto text-xs text-slate-500 hover:text-slate-300"
+              className="ml-auto text-xs text-ink-400 transition-colors duration-150 hover:text-ink-700"
               title={it.active ? "Disable" : "Enable"}
             >
               {it.active ? "on" : "off"}
             </button>
             <button
               onClick={() => remove(it.id)}
-              className="text-xs text-red-400 hover:text-red-300"
+              className="text-xs text-accent-red/70 transition-colors duration-150 hover:text-accent-red"
             >
               ✕
             </button>
           </li>
         ))}
         {items.length === 0 && (
-          <li className="text-xs text-slate-500">No values yet.</li>
+          <li className="text-xs text-ink-400">No values yet.</li>
         )}
       </ul>
 
@@ -115,7 +115,7 @@ function ListColumn({ type, items }: { type: TaxonomyType; items: Item[] }) {
           +
         </button>
       </form>
-      {err && <p className="mt-1 text-xs text-red-400">{err}</p>}
+      {err && <p className="mt-1 text-xs text-accent-red">{err}</p>}
     </div>
   );
 }

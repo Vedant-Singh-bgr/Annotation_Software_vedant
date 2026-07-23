@@ -66,9 +66,9 @@ export default function BatchManager({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-white">
+        <h1 className="font-serif text-2xl font-medium text-ink-900">
           {project.name}{" "}
-          <span className="text-sm font-normal text-slate-500">
+          <span className="font-sans text-sm font-normal text-ink-500">
             · {project.batches.length} batches
           </span>
         </h1>
@@ -78,7 +78,7 @@ export default function BatchManager({
       </div>
 
       {!r2Configured && (
-        <p className="mb-4 rounded-md border border-amber-800/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+        <p className="mb-4 rounded-lg border border-accent-yellow/30 bg-accent-yellow/10 px-3 py-2 text-xs text-accent-yellow">
           R2 credentials are not configured, so live bucket browsing is disabled.
           You can still add clips manually by key/URL. Set R2_* env vars to enable
           “Import from R2”.
@@ -144,9 +144,9 @@ function NewBatchForm({
   }
 
   return (
-    <form onSubmit={submit} className="card space-y-3 p-4">
-      <h2 className="text-sm font-semibold text-white">New batch</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
+    <form onSubmit={submit} className="card space-y-4 p-5">
+      <h2 className="text-sm font-medium text-ink-900">New batch</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="label">Batch name</label>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Batch 7 — kitchens" required />
@@ -164,7 +164,7 @@ function NewBatchForm({
           <input className="input" type="number" min={1} step="0.001" value={defaultFps} onChange={(e) => setDefaultFps(e.target.value)} />
         </div>
       </div>
-      {err && <p className="text-xs text-red-400">{err}</p>}
+      {err && <p className="text-xs text-accent-red">{err}</p>}
       <button type="submit" className="btn-primary" disabled={busy}>
         {busy ? "Creating…" : "Create batch"}
       </button>
@@ -196,11 +196,11 @@ function BatchCard({
   }
 
   return (
-    <div className="card p-4">
+    <div className="card p-5">
       <div className="flex flex-wrap items-center gap-3">
         <div>
-          <div className="font-medium text-slate-100">{batch.name}</div>
-          <div className="text-xs text-slate-500">
+          <div className="font-medium text-ink-900">{batch.name}</div>
+          <div className="text-xs text-ink-400">
             Q every {batch.sampleEveryN}f · {batch.defaultFps} fps
             {batch.r2Prefix ? ` · prefix ${batch.r2Prefix}` : ""}
           </div>
@@ -279,12 +279,12 @@ function BatchCard({
         />
       )}
 
-      <div className="mt-3 border-t border-ink-700 pt-3">
-        <div className="mb-2 text-xs font-medium text-slate-400">
+      <div className="mt-3 border-t border-ink-900/10 pt-3">
+        <div className="mb-2 text-xs font-medium text-ink-500">
           Clips ({batch.clips.length})
         </div>
         {batch.clips.length === 0 ? (
-          <p className="text-xs text-slate-500">No clips yet.</p>
+          <p className="text-xs text-ink-400">No clips yet.</p>
         ) : (
           <ul className="space-y-1">
             {batch.clips.map((c) => (
@@ -341,10 +341,10 @@ function PublishBatchControl({
   }
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-ink-700 bg-ink-800/40 px-3 py-2">
+    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-ink-900/10 bg-paper-50 px-3 py-2">
       <div className="min-w-0">
-        <div className="text-xs font-medium text-slate-300">Delivery</div>
-        <div className="truncate text-[11px] text-slate-500">
+        <div className="text-xs font-medium text-ink-700">Delivery</div>
+        <div className="truncate text-[11px] text-ink-400">
           {batch.manifestR2Key ? (
             <span title={batch.manifestR2Key}>
               manifest: <span className="font-mono">{batch.manifestR2Key}</span>
@@ -358,7 +358,7 @@ function PublishBatchControl({
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
-        <span className="text-[11px] text-slate-500">
+        <span className="text-[11px] text-ink-400">
           {batch.approvedCount} approved
         </span>
         <button
@@ -371,13 +371,13 @@ function PublishBatchControl({
                 ? "No approved assignments to publish"
                 : "Publish approved exports + manifest to R2"
           }
-          className="rounded border border-brand-600/50 bg-brand-600/10 px-2.5 py-1 text-xs text-brand-300 hover:bg-brand-600/20 disabled:opacity-40"
+          className="rounded-lg border border-accent-blue/40 bg-accent-blue/5 px-2.5 py-1 text-xs text-accent-blue transition-colors duration-150 hover:bg-accent-blue/10 disabled:opacity-40"
         >
           {busy ? "Publishing…" : batch.manifestR2Key ? "Re-publish batch" : "Publish batch"}
         </button>
       </div>
-      {err && <p className="w-full text-xs text-red-400">{err}</p>}
-      {result && <p className="w-full text-xs text-green-400">{result}</p>}
+      {err && <p className="w-full text-xs text-accent-red">{err}</p>}
+      {result && <p className="w-full text-xs text-accent-green">{result}</p>}
     </div>
   );
 }
@@ -428,12 +428,12 @@ function ClipRow({
   const mmss = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
   return (
-    <li className="text-sm text-slate-300">
+    <li className="text-sm text-ink-700">
       <div className="flex items-center gap-2">
-        <span className="text-slate-500">{isSession ? "🎬" : "▶"}</span>
+        <span className="text-ink-400">{isSession ? "🎬" : "▶"}</span>
         <span className="truncate">{c.title}</span>
         {isSession && (
-          <span className="shrink-0 rounded bg-ink-700 px-1.5 py-0.5 text-[10px] text-slate-400">
+          <span className="shrink-0 rounded bg-ink-900/5 px-1.5 py-0.5 text-[10px] text-ink-500">
             {c.segmentCount} seg · {c.dataType ?? "session"}
             {c.frameCount ? ` · ${c.frameCount}f` : ""}
           </span>
@@ -444,17 +444,17 @@ function ClipRow({
             title={c.proxyError ?? undefined}
             className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
               c.proxyStatus === "ready"
-                ? "bg-green-900/40 text-green-300"
+                ? "bg-accent-green/10 text-accent-green"
                 : c.proxyStatus === "failed"
-                  ? "bg-red-900/40 text-red-300"
+                  ? "bg-accent-red/10 text-accent-red"
                   : inFlight
-                    ? "bg-blue-900/40 text-blue-300"
-                    : "bg-amber-900/40 text-amber-300"
+                    ? "bg-accent-blue/10 text-accent-blue"
+                    : "bg-accent-yellow/10 text-accent-yellow"
             }`}
           >
             {inFlight ? (
               <>
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-300 border-t-transparent" />
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent-blue border-t-transparent" />
                 {c.proxyStatus} · {mmss}
               </>
             ) : (
@@ -462,20 +462,20 @@ function ClipRow({
             )}
           </button>
         )}
-        <span className="ml-auto shrink-0 text-xs text-slate-500">
+        <span className="ml-auto shrink-0 text-xs text-ink-400">
           {c.sizeBytes ? `${fmtBytes(c.sizeBytes)} · ` : ""}
           {c.assignmentCount} assigned
         </span>
         <button
           onClick={onDelete}
-          className="shrink-0 text-xs text-red-400 hover:text-red-300"
+          className="shrink-0 text-xs text-accent-red/70 transition-colors duration-150 hover:text-accent-red"
         >
           ✕
         </button>
       </div>
       {c.assignments.length > 0 && (
         <div className="mt-1 flex flex-wrap items-center gap-1 pl-6 text-[11px]">
-          <span className="text-slate-600">review:</span>
+          <span className="text-ink-300">review:</span>
           {c.assignments.map((a) => (
             <Link
               key={a.id}
@@ -485,10 +485,10 @@ function ClipRow({
                   ? "Open to review (approve / reject)"
                   : "Open annotation"
               }
-              className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-slate-300 hover:border-brand-500 hover:text-white ${
+              className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 transition-colors duration-150 hover:border-accent-blue/60 ${
                 a.status === "SUBMITTED"
-                  ? "border-amber-700/60 bg-amber-950/30 text-amber-300"
-                  : "border-ink-700 bg-ink-800"
+                  ? "border-accent-yellow/30 bg-accent-yellow/10 text-accent-yellow"
+                  : "border-ink-900/10 bg-ink-900/[0.03] text-ink-700 hover:text-ink-900"
               }`}
             >
               {a.annotator} · {a.status.toLowerCase().replace("_", " ")}
@@ -569,7 +569,7 @@ function TranscodeProxyForm({
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-md bg-ink-800/50 p-3">
+    <div className="mt-2 space-y-2 rounded-lg border border-ink-900/10 bg-paper-50 p-3">
       <div className="flex items-center gap-2">
         <button
           className="btn-ghost text-xs"
@@ -587,14 +587,14 @@ function TranscodeProxyForm({
               : "▶ Queue transcode"}
         </button>
         {clip.proxyStatus === "queued" || clip.proxyStatus === "transcoding" ? (
-          <span className="flex items-center gap-1 text-[11px] text-blue-300">
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-300 border-t-transparent" />
+          <span className="flex items-center gap-1 text-[11px] text-accent-blue">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent-blue border-t-transparent" />
             {clip.proxyStatus === "queued"
               ? "waiting for the transcode worker to pick it up"
               : "downloading blobs + encoding (a few minutes)"}
           </span>
         ) : (
-          <span className="text-[11px] text-slate-500">
+          <span className="text-[11px] text-ink-400">
             {r2Configured
               ? "queues the job — run scripts/transcode_worker.py to process it"
               : "needs R2 creds — use the manual path below in demo mode"}
@@ -602,11 +602,11 @@ function TranscodeProxyForm({
         )}
       </div>
       {clip.proxyError && (
-        <p className="text-xs text-red-400">Last error: {clip.proxyError}</p>
+        <p className="text-xs text-accent-red">Last error: {clip.proxyError}</p>
       )}
 
-      <form onSubmit={saveResult} className="space-y-2 border-t border-ink-700 pt-2">
-        <p className="text-[11px] text-slate-500">
+      <form onSubmit={saveResult} className="space-y-2 border-t border-ink-900/10 pt-2">
+        <p className="text-[11px] text-ink-400">
           Or paste the JSON printed by{" "}
           <code>transcode_session.py</code> to record fps, frame count, and
           per-segment frame ranges (idempotent).
@@ -623,8 +623,8 @@ function TranscodeProxyForm({
           value={sourceUrl}
           onChange={(e) => setSourceUrl(e.target.value)}
         />
-        {err && <p className="text-xs text-red-400">{err}</p>}
-        {ok && <p className="text-xs text-green-400">{ok}</p>}
+        {err && <p className="text-xs text-accent-red">{err}</p>}
+        {ok && <p className="text-xs text-accent-green">{ok}</p>}
         <button type="submit" className="btn-primary text-xs" disabled={busy !== null}>
           {busy === "save" ? "Saving…" : "Save transcode result"}
         </button>
@@ -743,8 +743,8 @@ function R2SessionBrowser({
   }
 
   return (
-    <div className="mt-3 space-y-2 rounded-md border border-ink-700 bg-ink-800/40 p-3">
-      <p className="text-xs text-slate-400">
+    <div className="mt-3 space-y-2 rounded-lg border border-ink-900/10 bg-paper-50 p-3">
+      <p className="text-xs text-ink-500">
         Click through the folders to a worksite/worker, then{" "}
         <b>List sessions here</b> to find every <code>manifest.json</code> under it
         and import many at once. Or type a prefix directly.
@@ -752,13 +752,13 @@ function R2SessionBrowser({
 
       {/* Breadcrumb */}
       <div className="flex flex-wrap items-center gap-1 text-xs">
-        <button className="text-brand-400 hover:underline" onClick={() => browse("")}>
+        <button className="link" onClick={() => browse("")}>
           bucket
         </button>
         {crumbs.map((c) => (
           <span key={c.path} className="flex items-center gap-1">
-            <span className="text-slate-600">/</span>
-            <button className="text-brand-400 hover:underline" onClick={() => browse(c.path)}>
+            <span className="text-ink-300">/</span>
+            <button className="link" onClick={() => browse(c.path)}>
               {c.label}
             </button>
           </span>
@@ -773,7 +773,7 @@ function R2SessionBrowser({
               <button
                 onClick={() => browse(f)}
                 disabled={loading}
-                className="flex items-center gap-1 rounded border border-ink-700 px-2 py-1 text-xs text-slate-200 hover:bg-ink-700"
+                className="flex items-center gap-1 rounded-lg border border-ink-900/10 px-2 py-1 text-xs text-ink-800 transition-colors duration-150 hover:border-ink-900/20 hover:bg-ink-900/5"
               >
                 📁 {f.replace(prefix, "").replace(/\/$/, "")}
               </button>
@@ -810,10 +810,10 @@ function R2SessionBrowser({
 
       {sessions.length > 0 && (
         <>
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center justify-between text-xs text-ink-400">
             <span>{sessions.length} sessions</span>
             <button
-              className="text-brand-400 hover:underline"
+              className="link"
               onClick={() => setSelected(new Set(sessions.map((s) => s.key)))}
             >
               Select all
@@ -822,7 +822,7 @@ function R2SessionBrowser({
           <ul className="max-h-64 space-y-0.5 overflow-auto">
             {sessions.map((s) => (
               <li key={s.key}>
-                <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-slate-200 hover:bg-ink-700">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm text-ink-800 transition-colors duration-150 hover:bg-ink-900/5">
                   <input
                     type="checkbox"
                     checked={selected.has(s.key)}
@@ -830,11 +830,11 @@ function R2SessionBrowser({
                   />
                   <span>🎬</span>
                   <span className="truncate font-mono text-xs">{s.sessionId}</span>
-                  <span className="shrink-0 rounded bg-ink-700 px-1.5 py-0.5 text-[10px] text-slate-400">
+                  <span className="shrink-0 rounded bg-ink-900/5 px-1.5 py-0.5 text-[10px] text-ink-500">
                     {s.dataType ?? "session"}
                     {s.worker ? ` · ${s.worker}` : ""}
                   </span>
-                  <span className="ml-auto shrink-0 text-xs text-slate-500">
+                  <span className="ml-auto shrink-0 text-xs text-ink-400">
                     {fmtBytes(s.size)}
                   </span>
                 </label>
@@ -853,11 +853,11 @@ function R2SessionBrowser({
         </>
       )}
 
-      {err && <p className="text-xs text-red-400">{err}</p>}
-      {result && <p className="text-xs text-green-400">{result}</p>}
+      {err && <p className="text-xs text-accent-red">{err}</p>}
+      {result && <p className="text-xs text-accent-green">{result}</p>}
 
-      <div className="flex items-center justify-between border-t border-ink-700 pt-2">
-        <label className="flex items-center gap-2 text-xs text-slate-400">
+      <div className="flex items-center justify-between border-t border-ink-900/10 pt-2">
+        <label className="flex items-center gap-2 text-xs text-ink-500">
           <input
             type="checkbox"
             checked={autoTranscode}
@@ -927,8 +927,8 @@ function SessionImportForm({
   }
 
   return (
-    <form onSubmit={submit} className="mt-3 space-y-2 rounded-md bg-ink-800/50 p-3">
-      <p className="text-xs text-slate-400">
+    <form onSubmit={submit} className="mt-3 space-y-2 rounded-lg border border-ink-900/10 bg-paper-50 p-3">
+      <p className="text-xs text-ink-500">
         Import a recording session from its upload <code>manifest.json</code>. Each
         session becomes one clip; its 4-min MCAP segments are recorded as
         provenance and a playable MP4 proxy is transcoded from them.
@@ -953,8 +953,8 @@ function SessionImportForm({
           onChange={(e) => setManifestKey(e.target.value)}
         />
       )}
-      {err && <p className="text-xs text-red-400">{err}</p>}
-      {ok && <p className="text-xs text-green-400">{ok}</p>}
+      {err && <p className="text-xs text-accent-red">{err}</p>}
+      {ok && <p className="text-xs text-accent-green">{ok}</p>}
       <button type="submit" className="btn-primary" disabled={busy}>
         {busy ? "Importing…" : "Import session"}
       </button>
@@ -984,11 +984,11 @@ function ManualClipForm({ batchId, onDone }: { batchId: string; onDone: () => vo
   }
 
   return (
-    <form onSubmit={submit} className="mt-3 space-y-2 rounded-md bg-ink-800/50 p-3">
+    <form onSubmit={submit} className="mt-3 space-y-2 rounded-lg border border-ink-900/10 bg-paper-50 p-3">
       <input className="input" placeholder="Clip title" value={title} onChange={(e) => setTitle(e.target.value)} required />
       <input className="input" placeholder="R2 object key (e.g. clips/batch7/a.mp4)" value={r2Key} onChange={(e) => setR2Key(e.target.value)} />
       <input className="input" placeholder="…or fallback source URL (demo mode)" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
-      {err && <p className="text-xs text-red-400">{err}</p>}
+      {err && <p className="text-xs text-accent-red">{err}</p>}
       <button type="submit" className="btn-primary" disabled={busy}>
         {busy ? "Adding…" : "Add clip"}
       </button>
@@ -1073,22 +1073,22 @@ function R2Browser({
   const parent = prefix.replace(/[^/]+\/$/, ""); // one level up
 
   return (
-    <div className="mt-3 rounded-md border border-ink-700 bg-ink-800/40 p-3">
+    <div className="mt-3 rounded-lg border border-ink-900/10 bg-paper-50 p-3">
       <div className="mb-2 flex items-center gap-2 text-xs">
-        <span className="text-slate-500">Bucket path:</span>
-        <span className="font-mono text-slate-300">/{prefix || ""}</span>
+        <span className="text-ink-400">Bucket path:</span>
+        <span className="font-mono text-ink-700">/{prefix || ""}</span>
         {prefix && (
-          <button className="text-brand-400 hover:underline" onClick={() => load(parent)}>
+          <button className="link" onClick={() => load(parent)}>
             ↑ up
           </button>
         )}
-        <button className="ml-auto text-brand-400 hover:underline" onClick={() => load(prefix)}>
+        <button className="link ml-auto" onClick={() => load(prefix)}>
           ⟳ refresh
         </button>
       </div>
 
       {loading ? (
-        <p className="py-4 text-center text-xs text-slate-500">Loading…</p>
+        <p className="py-4 text-center text-xs text-ink-400">Loading…</p>
       ) : (
         <>
           {prefixes.length > 0 && (
@@ -1097,7 +1097,7 @@ function R2Browser({
                 <li key={p}>
                   <button
                     onClick={() => load(p)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm text-slate-300 hover:bg-ink-700"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-sm text-ink-700 transition-colors duration-150 hover:bg-ink-900/5"
                   >
                     <span>📁</span>
                     <span className="font-mono">{p.replace(prefix, "")}</span>
@@ -1108,16 +1108,16 @@ function R2Browser({
           )}
 
           {objects.length === 0 && prefixes.length === 0 && (
-            <p className="py-4 text-center text-xs text-slate-500">
+            <p className="py-4 text-center text-xs text-ink-400">
               Nothing here.
             </p>
           )}
 
           {objects.length > 0 && (
             <>
-              <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+              <div className="mb-1 flex items-center justify-between text-xs text-ink-400">
                 <span>{objects.length} objects</span>
-                <button className="text-brand-400 hover:underline" onClick={selectAllVideos}>
+                <button className="link" onClick={selectAllVideos}>
                   Select all videos
                 </button>
               </div>
@@ -1125,9 +1125,9 @@ function R2Browser({
                 {objects.map((o) => (
                   <li key={o.key}>
                     <label
-                      className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm ${
-                        o.isVideo ? "text-slate-200" : "text-slate-500"
-                      } hover:bg-ink-700`}
+                      className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm ${
+                        o.isVideo ? "text-ink-800" : "text-ink-400"
+                      } transition-colors duration-150 hover:bg-ink-900/5`}
                     >
                       <input
                         type="checkbox"
@@ -1139,7 +1139,7 @@ function R2Browser({
                       <span className="truncate font-mono">
                         {o.key.replace(prefix, "")}
                       </span>
-                      <span className="ml-auto shrink-0 text-xs text-slate-500">
+                      <span className="ml-auto shrink-0 text-xs text-ink-400">
                         {fmtBytes(o.size)}
                       </span>
                     </label>
@@ -1151,10 +1151,10 @@ function R2Browser({
         </>
       )}
 
-      {err && <p className="mt-2 text-xs text-red-400">{err}</p>}
+      {err && <p className="mt-2 text-xs text-accent-red">{err}</p>}
 
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-xs text-slate-500">{selected.size} selected</span>
+        <span className="text-xs text-ink-400">{selected.size} selected</span>
         <button
           className="btn-primary text-xs"
           disabled={selected.size === 0 || importing}

@@ -37,8 +37,8 @@ export default function NewProjectForm({ orgs }: { orgs: Org[] }) {
   }
 
   return (
-    <form onSubmit={submit} className="card h-fit space-y-3 p-4">
-      <h2 className="text-sm font-semibold text-white">New project</h2>
+    <form onSubmit={submit} className="card h-fit space-y-4 p-5">
+      <h2 className="text-sm font-medium text-ink-900">New project</h2>
       <div>
         <label className="label">Organization</label>
         <select
@@ -64,7 +64,7 @@ export default function NewProjectForm({ orgs }: { orgs: Org[] }) {
         <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
       </div>
       {msg && (
-        <p className={`text-xs ${msg.ok ? "text-green-400" : "text-red-400"}`}>{msg.text}</p>
+        <p className={`text-xs ${msg.ok ? "text-accent-green" : "text-accent-red"}`}>{msg.text}</p>
       )}
       <button type="submit" className="btn-primary w-full" disabled={busy || orgs.length === 0}>
         {busy ? "Creating…" : "Create project"}

@@ -43,9 +43,12 @@ function LoginForm() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-semibold text-white">Annotation Platform</h1>
-          <p className="mt-1 text-sm text-slate-400">Sign in to continue</p>
+        <div className="mb-8 text-center">
+          <div className="wordmark mb-3">Kosha</div>
+          <h1 className="font-serif text-[26px] font-medium text-ink-900">
+            Annotation Platform
+          </h1>
+          <p className="mt-1.5 text-sm text-ink-500">Sign in to continue</p>
         </div>
 
         <form onSubmit={onSubmit} className="card space-y-4 p-6">
@@ -75,7 +78,7 @@ function LoginForm() {
           </div>
 
           {error && (
-            <p className="rounded-md bg-red-950/50 px-3 py-2 text-sm text-red-300">
+            <p className="rounded-lg border border-accent-red/25 bg-accent-red/5 px-3 py-2 text-sm text-accent-red">
               {error}
             </p>
           )}

@@ -17,30 +17,30 @@ export default async function TeamPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <div>
-        <h1 className="mb-4 text-xl font-semibold text-white">Team</h1>
-        <div className="grid gap-3">
+        <h1 className="mb-5 font-serif text-2xl font-medium text-ink-900">Team</h1>
+        <div className="grid gap-4">
           {members.map((m) => (
             <div
               key={m.id}
-              className={`card flex items-center gap-4 p-4 ${m.active ? "" : "opacity-60"}`}
+              className={`card flex items-center gap-4 p-5 ${m.active ? "" : "opacity-60"}`}
             >
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-ink-700 text-sm font-semibold text-slate-200">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-ink-900/5 text-sm font-medium text-ink-700">
                 {m.name.slice(0, 2).toUpperCase()}
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-2 font-medium text-slate-100">
+                <div className="flex items-center gap-2 font-medium text-ink-900">
                   {m.name}
                   {!m.active && (
-                    <span className="badge bg-red-950/50 text-red-300">Deactivated</span>
+                    <span className="badge border-accent-red/25 bg-accent-red/5 text-accent-red">Deactivated</span>
                   )}
                 </div>
-                <div className="text-xs text-slate-500">{m.email}</div>
+                <div className="text-xs text-ink-400">{m.email}</div>
               </div>
               <div className="text-right">
-                <span className="badge bg-ink-700 text-slate-300">
+                <span className="badge border-ink-900/10 bg-ink-900/[0.03] text-ink-700">
                   {m.role === "ORG_ADMIN" ? "Admin" : "Annotator"}
                 </span>
-                <div className="mt-1 text-xs text-slate-500">
+                <div className="mt-1 text-xs text-ink-400">
                   {m._count.assignments} tasks
                 </div>
               </div>

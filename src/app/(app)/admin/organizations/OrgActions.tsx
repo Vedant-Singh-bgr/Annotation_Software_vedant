@@ -46,13 +46,13 @@ export default function OrgActions({
       <button
         onClick={toggle}
         disabled={busy}
-        className={`text-xs hover:underline disabled:opacity-50 ${
-          active ? "text-red-400" : "text-green-400"
+        className={`text-xs transition-colors duration-150 hover:underline hover:underline-offset-2 disabled:opacity-50 ${
+          active ? "text-accent-red" : "text-accent-green"
         }`}
       >
         {busy ? "…" : active ? "Archive" : "Restore"}
       </button>
-      {err && <div className="text-[11px] text-red-400">{err}</div>}
+      {err && <div className="text-[11px] text-accent-red">{err}</div>}
     </div>
   );
 }

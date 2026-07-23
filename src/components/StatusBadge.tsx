@@ -1,9 +1,9 @@
 const STYLES: Record<string, string> = {
-  ASSIGNED: "bg-slate-700/50 text-slate-300",
-  IN_PROGRESS: "bg-amber-900/40 text-amber-300",
-  SUBMITTED: "bg-blue-900/40 text-blue-300",
-  APPROVED: "bg-green-900/40 text-green-300",
-  REJECTED: "bg-red-900/40 text-red-300",
+  ASSIGNED: "border-ink-900/15 bg-ink-900/[0.04] text-ink-600",
+  IN_PROGRESS: "border-accent-yellow/30 bg-accent-yellow/10 text-accent-yellow",
+  SUBMITTED: "border-accent-blue/30 bg-accent-blue/10 text-accent-blue",
+  APPROVED: "border-accent-green/30 bg-accent-green/10 text-accent-green",
+  REJECTED: "border-accent-red/30 bg-accent-red/10 text-accent-red",
 };
 
 const LABELS: Record<string, string> = {
@@ -16,7 +16,7 @@ const LABELS: Record<string, string> = {
 
 export default function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`badge ${STYLES[status] ?? "bg-slate-700/50 text-slate-300"}`}>
+    <span className={`badge ${STYLES[status] ?? "border-ink-900/15 bg-ink-900/[0.04] text-ink-600"}`}>
       {LABELS[status] ?? status}
     </span>
   );
