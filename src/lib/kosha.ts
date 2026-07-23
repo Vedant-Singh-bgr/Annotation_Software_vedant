@@ -38,15 +38,7 @@ export const TAXONOMY_LABELS: Record<TaxonomyType, string> = {
   JOB: "Job title",
 };
 
-// Boundary precision targets (frames), from the guideline.
-export const PRECISION_L1_FRAMES = 30;
-export const PRECISION_L2_FRAMES = 15;
-
 // ── frame <-> time ──────────────────────────────────────────────────────────
-export function timeToFrame(sec: number, fps: number): number {
-  return Math.max(0, Math.round(sec * (fps || DEFAULT_FPS)));
-}
-
 export function frameToTime(frame: number, fps: number): number {
   return frame / (fps || DEFAULT_FPS);
 }
