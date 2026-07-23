@@ -127,7 +127,12 @@ def main() -> None:
     ap.add_argument("--copy", action="store_true",
                     help="stream-copy the source H.264 instead of re-encoding. Fast to produce, "
                          "but the proxy inherits the source GOP/resolution — scrubbing will stall.")
-    ap.add_argument("--crf", type=int, default=20, help="x264 CRF when re-encoding (lower=better)")
+    # 26 (not the usual 20): dense keyframes + no B-frames inflate bitrate a lot,
+    # and this proxy is STREAMED from R2 while being scrubbed. CRF 20 measured
+    # 5.5 Mbit/s on 1920x1200 rig footage — heavy enough that network stalls would
+    # reintroduce the very freezing the dense GOP is meant to fix. 26 lands at
+    # ~2.2 Mbit/s and stays clearly legible at 720p for object labelling.
+    ap.add_argument("--crf", type=int, default=26, help="x264 CRF when re-encoding (lower=better)")
     ap.add_argument("--gop", type=int, default=None,
                     help="keyframe interval in frames when re-encoding (default ~0.5s; smaller=snappier seeking, bigger file)")
     ap.add_argument("--max-height", type=int, default=720,
