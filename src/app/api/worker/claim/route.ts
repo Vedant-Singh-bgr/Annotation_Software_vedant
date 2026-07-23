@@ -20,16 +20,33 @@ function authorize(req: NextRequest): void {
 // Claim a queued overlay render (burn an approved assignment's labels onto its
 // video). Returns null when there is nothing to do, so the caller can fall
 // through. Same atomic claim pattern as the transcode path.
+// A render claimed by a worker that then died — a redeploy, an OOM kill — never
+// reports back, so its row sits in `rendering` forever: nothing re-claims it and
+// the UI's re-render button is disabled while it is in flight. Since every push
+// restarts the worker, that is routine rather than exotic. Treat a claim older
+// than this as abandoned and take it again. Generous by default because burning
+// onto a full-resolution original is genuinely slow.
+const STALE_RENDER_MINUTES = Number(process.env.OVERLAY_STALE_MINUTES ?? "30") || 30;
+
 async function claimOverlay() {
+  const staleBefore = new Date(Date.now() - STALE_RENDER_MINUTES * 60_000);
   const candidate = await prisma.assignment.findFirst({
-    where: { overlayStatus: "queued", status: "APPROVED" },
+    where: {
+      status: "APPROVED",
+      OR: [
+        { overlayStatus: "queued" },
+        // Abandoned mid-render: reclaim rather than stranding it.
+        { overlayStatus: "rendering", updatedAt: { lt: staleBefore } },
+      ],
+    },
     orderBy: { updatedAt: "asc" },
-    select: { id: true },
+    select: { id: true, overlayStatus: true },
   });
   if (!candidate) return null;
 
   const claimed = await prisma.assignment.updateMany({
-    where: { id: candidate.id, overlayStatus: "queued" },
+    // Guard on the status we actually saw, so two workers can't both take it.
+    where: { id: candidate.id, overlayStatus: candidate.overlayStatus },
     data: { overlayStatus: "rendering", overlayError: null },
   });
   if (claimed.count === 0) return null; // lost the race

@@ -116,7 +116,12 @@
     id = (id||'').trim(); if (!id) return;
     document.getElementById('info').textContent = 'loading ' + id + ' …';
     try {
-      const res = await fetch('/api/assignments/' + encodeURIComponent(id) + '/review',
+      // Forward ?source=original so the labels can be checked against the
+      // untouched upload rather than the downscaled scrub proxy. Frame indices
+      // are identical in both, so the overlay lines up either way.
+      const src = new URLSearchParams(location.search).get('source');
+      const res = await fetch('/api/assignments/' + encodeURIComponent(id) + '/review'
+                              + (src ? '?source=' + encodeURIComponent(src) : ''),
                               { credentials: 'same-origin' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
@@ -124,6 +129,10 @@
       v.src = body.playbackUrl; v.load();
       dropmsg.style.display = 'none';
       applyExport(body.export);
+      if (body.playing) {
+        const el = document.getElementById('info');
+        el.textContent += ' · playing ' + body.playing;
+      }
     } catch (e) {
       document.getElementById('info').textContent =
         'could not load ' + id + ': ' + e.message + ' (are you signed in to the app?)';

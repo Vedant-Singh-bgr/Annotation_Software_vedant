@@ -252,17 +252,39 @@ export default function OverlayGallery({
                   Play ▸
                 </button>
               )}
+              {/* Live overlay on the source video — the same viewer the Review
+                  tab links to. Available immediately, with no render: the labels
+                  are drawn over the streamed video in the browser. */}
+              <a
+                href={`/overlay.html?assignment=${r.id}${r.hasOriginal ? "&source=original" : ""}`}
+                target="_blank"
+                rel="noreferrer"
+                title={
+                  r.hasOriginal
+                    ? "Play the ORIGINAL upload with the labels drawn live — no render, available now"
+                    : "Play the source video with the labels drawn live (no render needed)"
+                }
+                className="shrink-0 text-xs text-ink-400 transition-colors duration-150 hover:text-ink-900"
+              >
+                Live ↗
+              </a>
               <button
                 onClick={() => render([r.id], r.hasOriginal ? "original" : "proxy")}
-                disabled={busy || !r2Configured || !r.exportR2Key || flight}
+                // Deliberately NOT disabled while in flight: a worker killed
+                // mid-render leaves the row stuck on "rendering" forever, and
+                // disabling the only button that could recover it was how the
+                // job became unrecoverable in the first place.
+                disabled={busy || !r2Configured || !r.exportR2Key}
                 title={
                   !r.exportR2Key
                     ? "Publish the assignment first"
-                    : "Render (or re-render) this overlay"
+                    : flight
+                      ? "Stuck? Queue it again — safe even if a worker is still on it."
+                      : "Render (or re-render) this overlay"
                 }
                 className="shrink-0 text-xs text-ink-400 transition-colors duration-150 hover:text-ink-900 disabled:opacity-30"
               >
-                {status === "ready" ? "Re-render" : "Render"}
+                {flight ? "Re-queue" : status === "ready" ? "Re-render" : "Render"}
               </button>
             </li>
           );
