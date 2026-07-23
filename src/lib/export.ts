@@ -112,6 +112,13 @@ export async function buildAssignmentExport(assignment: {
 
   return {
     exportedAt: new Date().toISOString(),
+    // Every *_start_frame / *_end_frame pair below is HALF-OPEN: the start frame
+    // is included, the end frame is not. So a task 0–300 covers frames 0..299,
+    // and the next task starts at exactly 300 with no overlap and no gap. Stated
+    // explicitly because a consumer that reads the end as inclusive would
+    // double-count every boundary frame, and nothing in the numbers reveals the
+    // mistake.
+    frame_interval: "half-open [start_frame, end_frame) — end_frame is exclusive",
     project: clip.batch.project.name,
     batch: clip.batch.name,
     clip: {

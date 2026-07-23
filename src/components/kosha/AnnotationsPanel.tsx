@@ -191,7 +191,14 @@ function ListView({
                       ))}
                     </span>
                   )}
-                  <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500">
+                  <span
+                    className="shrink-0 font-mono text-xs tabular-nums text-ink-500"
+                    // The end is exclusive, so this range reads one frame wider
+                    // than it is. Spell out the frames actually covered — the
+                    // shared boundary number is what makes people think two
+                    // neighbouring blocks both annotate it.
+                    title={`Covers frames ${t.startFrame}–${Math.max(t.startFrame, t.endFrame - 1)} (end frame ${t.endFrame} belongs to the next task)`}
+                  >
                     {t.startFrame}–{t.endFrame}
                     <span
                       className={tHint ? "text-accent-yellow" : "text-ink-400"}
@@ -251,7 +258,10 @@ function ListView({
                             >
                               {s.label.trim() || "Untitled"}
                             </span>
-                            <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500">
+                            <span
+                              className="shrink-0 font-mono text-xs tabular-nums text-ink-500"
+                              title={`Covers frames ${s.startFrame}–${Math.max(s.startFrame, s.endFrame - 1)} (end frame ${s.endFrame} belongs to the next sub-task)`}
+                            >
                               {s.startFrame}–{s.endFrame}
                               <span
                                 className={sHint ? "text-accent-yellow" : "text-ink-400"}
@@ -506,7 +516,7 @@ function TaskEditor({
           onPlayhead={() => onUpdate({ startFrame: currentFrame })}
         />
         <FrameField
-          label="End frame"
+          label="End frame (exclusive)"
           value={task.endFrame}
           disabled={dis}
           onChange={(v) => onUpdate({ endFrame: v })}
@@ -654,7 +664,7 @@ function SubTaskEditor({
           onPlayhead={() => onUpdate({ startFrame: currentFrame })}
         />
         <FrameField
-          label="End frame"
+          label="End frame (exclusive)"
           value={sub.endFrame}
           disabled={dis}
           onChange={(v) => onUpdate({ endFrame: v })}
@@ -810,7 +820,16 @@ function FrameField({
 
   return (
     <div>
-      <div className="label">{label}</div>
+      <div
+        className="label"
+        title={
+          label.startsWith("End")
+            ? "Exclusive: the span covers up to this frame but not including it, so the next block starts on exactly this number."
+            : "Inclusive: the span starts on this frame."
+        }
+      >
+        {label}
+      </div>
       <div className="relative">
         <input
           className="input pr-8 font-mono tabular-nums"
