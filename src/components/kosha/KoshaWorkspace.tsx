@@ -77,6 +77,12 @@ export default function KoshaWorkspace(props: Props) {
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
 
+  // Latest frame requested while a seek was already in flight. Timeline drags and
+  // held arrow keys fire a seek per frame; assigning currentTime on each one makes
+  // the decoder queue work it can never catch up with (the "freezing" symptom).
+  // We keep only the newest target and apply it when the decoder reports `seeked`.
+  const pendingSeek = useRef<number | null>(null);
+
   const flash = useCallback((m: string) => {
     setToast(m);
     window.setTimeout(() => setToast(null), 1800);
@@ -105,15 +111,52 @@ export default function KoshaWorkspace(props: Props) {
     };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+    // A seek finished: if the annotator kept dragging while it ran, jump straight
+    // to wherever they are NOW, skipping every frame in between.
+    const onSeeked = () => {
+      const next = pendingSeek.current;
+      if (next == null) return;
+      pendingSeek.current = null;
+      try {
+        v.currentTime = frameToTime(next, fps) + 0.0001;
+      } catch {
+        /* not seekable yet */
+      }
+    };
     v.addEventListener("timeupdate", onTime);
+    v.addEventListener("seeked", onSeeked);
     v.addEventListener("loadedmetadata", onMeta);
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
+
+    // Prefer requestVideoFrameCallback, which fires once per *presented* frame, so
+    // the readout and the label HUD match the picture exactly. `timeupdate` only
+    // fires ~4x/second, which left the overlay up to 250ms behind what the
+    // annotator was looking at — enough to mislabel a boundary frame. Skipped
+    // while a seek is outstanding so it can't fight a drag in progress.
+    type RVFCVideo = HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number;
+      cancelVideoFrameCallback?: (handle: number) => void;
+    };
+    const rv = v as RVFCVideo;
+    let handle = 0;
+    if (rv.requestVideoFrameCallback) {
+      const step = (_now: number, meta: { mediaTime: number }) => {
+        if (!v.seeking && pendingSeek.current == null) {
+          setCurrentFrame(Math.round(meta.mediaTime * fps));
+        }
+        handle = rv.requestVideoFrameCallback!(step);
+      };
+      handle = rv.requestVideoFrameCallback(step);
+    }
+
     return () => {
       v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("seeked", onSeeked);
       v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("play", onPlay);
       v.removeEventListener("pause", onPause);
+      if (handle) rv.cancelVideoFrameCallback?.(handle);
     };
   }, [fps]);
 
@@ -134,6 +177,14 @@ export default function KoshaWorkspace(props: Props) {
       setCurrentFrame(f); // update UI first, independent of media readiness
       const v = videoRef.current;
       if (!v) return;
+      // Coalesce while a seek is in flight: remember only the newest target and
+      // let the `seeked` handler apply it. Dropping the intermediate targets is
+      // the point — the annotator only ever sees the frame they land on.
+      if (v.seeking) {
+        pendingSeek.current = f;
+        return;
+      }
+      pendingSeek.current = null;
       try {
         v.currentTime = frameToTime(f, fps) + 0.0001;
       } catch {
@@ -763,6 +814,9 @@ export default function KoshaWorkspace(props: Props) {
             className="aspect-video w-full bg-black"
             onClick={togglePlay}
             playsInline
+            // Buffer ahead aggressively: scrubbing back and forth over the same
+            // window is the normal workflow here, not linear watching.
+            preload="auto"
           />
           {showOverlay && (
             <VideoOverlay tasks={tasks} quality={quality} currentFrame={currentFrame} />

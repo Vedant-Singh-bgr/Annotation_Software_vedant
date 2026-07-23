@@ -3,8 +3,10 @@
 
 The annotatable stream is a foxglove.CompressedVideo (H.264) camera topic inside
 each ~4-min MCAP segment. We concatenate the segments' H.264 access units in order
-and STREAM-COPY them into an MP4 (no re-encode), then report per-segment frame
-ranges + true fps so the platform can fill Clip.frameCount and ClipSegment ranges.
+and re-encode them into a scrub-friendly MP4 proxy (dense keyframes, no B-frames,
+height-capped), then report per-segment frame ranges + true fps so the platform can
+fill Clip.frameCount and ClipSegment ranges. Pass --copy for a fast stream-copy
+instead — faithful, but it inherits the recorder's GOP and scrubs badly.
 
 Usage:
   # Local segments (proven path):
@@ -121,10 +123,17 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None, help="cap frames per segment (testing)")
     ap.add_argument("--upload-key", default=None, help="R2 key to upload the proxy to")
     ap.add_argument("--reencode", action="store_true",
-                    help="force re-encode to H.264 (auto-on for HEVC sources)")
+                    help="(kept for compatibility) force re-encode; re-encoding is now the default")
+    ap.add_argument("--copy", action="store_true",
+                    help="stream-copy the source H.264 instead of re-encoding. Fast to produce, "
+                         "but the proxy inherits the source GOP/resolution — scrubbing will stall.")
     ap.add_argument("--crf", type=int, default=20, help="x264 CRF when re-encoding (lower=better)")
     ap.add_argument("--gop", type=int, default=None,
                     help="keyframe interval in frames when re-encoding (default ~0.5s; smaller=snappier seeking, bigger file)")
+    ap.add_argument("--max-height", type=int, default=720,
+                    help="downscale the proxy to at most this height (0 = keep source height). "
+                         "Annotation only needs a legible view; full-res decode is what stalls the browser.")
+    ap.add_argument("--preset", default="veryfast", help="x264 preset when re-encoding")
     ap.add_argument("--report-url", default=None,
                     help="POST the metadata to this URL when done (closes the transcode loop)")
     ap.add_argument("--report-secret", default=None,
@@ -166,32 +175,54 @@ def run(args) -> None:
             })
 
     # The concatenated access units are raw Annex-B; the demuxer must match the
-    # source codec. HEVC (h265) plays unreliably in browsers, so re-encode it to
-    # H.264 for the proxy; H.264 sources stream-copy (fast, lossless).
+    # source codec. HEVC (h265) plays unreliably in browsers and always needs a
+    # re-encode.
+    #
+    # H.264 sources COULD stream-copy (fast, lossless) — and used to — but a copy
+    # inherits the recorder's GOP structure, which on these rigs is multi-second
+    # (sometimes one IDR per segment) at full sensor resolution with B-frames.
+    # That is exactly the worst case for an annotation proxy: every seek makes the
+    # browser decode from the previous keyframe, so scrubbing and frame-stepping
+    # freeze. The proxy is scrubbed, not watched linearly, so we re-encode by
+    # default and pay a one-time encode cost to make seeking cheap forever after.
+    # --copy restores the old behaviour when you only want a fast, faithful proxy.
     demux = "hevc" if fmt in ("h265", "hevc") else "h264"
     if fmt not in ("h264", "h265", "hevc", None):
         print(f"# WARNING: unexpected codec {fmt!r}", file=sys.stderr)
-    reencode = args.reencode or demux == "hevc"
+    reencode = demux == "hevc" or args.reencode or not args.copy
 
     seg_span = seg_span_ns_total / 1e9
     fps = args.fps or (seg_intervals_total / seg_span if seg_span > 0 else 30.0)
 
     ff = ffmpeg_exe()
+    vfilter: list[str] = []
     if reencode:
         # Re-encode to browser-safe H.264, constant frame rate (1 output frame per
-        # input access unit) so frame index i still maps to source frame i.
+        # input access unit) so frame index i still maps to source frame i. None of
+        # the settings below add or drop frames, so seg_meta stays valid.
+        #
         # DENSE keyframes (short GOP, no scene-cut keyframes) make frame-accurate
-        # seeking/stepping snappy — the proxy is scrubbed, not watched linearly.
+        # seeking/stepping snappy: a seek never decodes more than ~0.5s of video.
         gop = args.gop if args.gop and args.gop > 0 else max(1, round(fps / 2))
-        vcodec = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
+        vcodec = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", args.preset,
                   "-crf", str(args.crf),
-                  "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0"]
+                  "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
+                  # No B-frames: decode order == display order, so stepping backwards
+                  # a frame at a time doesn't force the decoder to reorder buffers.
+                  "-bf", "0",
+                  # Baseline-ish decode complexity + a level every browser accepts.
+                  "-profile:v", "high", "-level", "4.1",
+                  # Web player hint: lets the browser start rendering sooner.
+                  "-movflags", "+faststart"]
+        if args.max_height and args.max_height > 0:
+            # Downscale only (never upscale) and keep even dimensions for yuv420p.
+            vfilter = ["-vf", f"scale=-2:'min(ih,{args.max_height})'"]
     else:
-        vcodec = ["-c:v", "copy"]
+        vcodec = ["-c:v", "copy", "-movflags", "+faststart"]
     subprocess.run(
         [ff, "-y", "-loglevel", "error", "-f", demux, "-r", f"{fps:.6f}",
-         "-i", h264_path, "-an", *vcodec, "-r", f"{fps:.6f}",
-         "-movflags", "+faststart", args.out],
+         "-i", h264_path, "-an", *vfilter, *vcodec, "-r", f"{fps:.6f}",
+         args.out],
         check=True,
     )
     os.remove(h264_path)
@@ -205,6 +236,7 @@ def run(args) -> None:
         "out": args.out,
         "codec": fmt,
         "proxy_codec": "h264" if reencode else fmt,
+        "proxy_mode": "reencode" if reencode else "copy",
         "fps": round(fps, 4),
         "frame_count": total_frames,
         "duration_sec": round(duration, 3),
