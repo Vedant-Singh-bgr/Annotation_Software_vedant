@@ -49,8 +49,33 @@ QUALITY_FLAGS = [
 
 
 def ffmpeg_exe() -> str:
+    # Prefer a system ffmpeg on PATH. The worker image installs a full-featured
+    # Debian build (libfreetype -> drawtext, libass, fontconfig), whereas
+    # imageio-ffmpeg's bundled Linux binary is a minimal static build WITHOUT
+    # drawtext — so using it makes the frame-counter filter fail outright with
+    # "No such filter: 'drawtext'", which is exactly what stalled every render.
+    # Falls back to imageio-ffmpeg for local dev where no system ffmpeg exists.
+    sys_ff = shutil.which("ffmpeg")
+    if sys_ff:
+        return sys_ff
     import imageio_ffmpeg
     return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def has_filter(ff: str, name: str) -> bool:
+    """Whether this ffmpeg build actually provides a given filter. Used to make
+    the drawtext frame-counter optional rather than fatal — labels render through
+    libass regardless, so a missing drawtext should degrade, not crash."""
+    try:
+        out = subprocess.run(
+            [ff, "-hide_banner", "-filters"], capture_output=True, text=True
+        ).stdout
+        return any(
+            len(parts) > 1 and parts[1] == name
+            for parts in (line.split() for line in out.splitlines())
+        )
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def download_from_r2(blob_key: str, dest: str) -> None:
@@ -334,17 +359,25 @@ def run(args) -> None:
     # ffmpeg filter paths are parsed, not passed literally: on Windows a
     # backslash and the drive colon both need escaping inside the filtergraph.
     ass_arg = ass_path.replace("\\", "/").replace(":", "\\:")
+    ff = ffmpeg_exe()
     chain = []
     if (out_w, out_h) != (src_w, src_h):
         chain.append(f"scale={out_w}:{out_h}")
     chain.append(f"ass='{ass_arg}'")
-    # The frame counter is the one truly per-frame value, so it stays a drawtext.
-    chain.append(
-        f"drawtext=font='{args.font}':text='frame %{{n}}':x=16:y=14:fontsize=28:"
-        "fontcolor=0x93C5FD:borderw=2:bordercolor=black@0.8"
-    )
+    # The frame counter is the one truly per-frame value, so it stays a drawtext —
+    # but only when the build actually has it. Without this guard a drawtext-less
+    # ffmpeg aborts the whole render, losing the labels too; degrading to
+    # labels-only is far better than no overlay at all.
+    if has_filter(ff, "drawtext"):
+        chain.append(
+            f"drawtext=font='{args.font}':text='frame %{{n}}':x=16:y=14:fontsize=28:"
+            "fontcolor=0x93C5FD:borderw=2:bordercolor=black@0.8"
+        )
+    else:
+        print("# WARNING: this ffmpeg has no drawtext filter — rendering labels "
+              "without the frame counter.", file=sys.stderr)
 
-    cmd = [ffmpeg_exe(), "-y", "-loglevel", "error", "-stats",
+    cmd = [ff, "-y", "-loglevel", "error", "-stats",
            "-i", video, "-an", "-vf", ",".join(chain),
            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", args.preset,
            "-crf", str(args.crf), "-movflags", "+faststart", args.out]

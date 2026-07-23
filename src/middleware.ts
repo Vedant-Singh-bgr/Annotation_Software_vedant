@@ -21,14 +21,17 @@ export async function middleware(req: NextRequest) {
   );
   if (isPublic) return NextResponse.next();
 
-  // Machine callers: the background transcode reports its result to
-  // /api/admin/clips/<id>/proxy with a shared secret (no session cookie). Let it
-  // through when the secret matches; the route handler re-validates it.
+  // Machine callers: the background worker reports its results with a shared
+  // secret and no session cookie. Let those specific routes through when the
+  // secret matches; each handler re-validates it. The overlay report route was
+  // missing here, so the worker's success/failure POSTs were 401'd at the edge
+  // before reaching the handler — leaving every render stuck in "rendering".
   const secret = process.env.TRANSCODE_SECRET;
   if (
     secret &&
     req.headers.get("x-transcode-secret") === secret &&
     (/^\/api\/admin\/clips\/[^/]+\/proxy$/.test(pathname) ||
+      /^\/api\/admin\/assignments\/[^/]+\/overlay$/.test(pathname) ||
       pathname === "/api/worker/claim")
   ) {
     return NextResponse.next();
