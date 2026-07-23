@@ -104,11 +104,43 @@ def ass_escape(text: str) -> str:
     return re.sub(r"[\r\n]+", " ", out).strip()
 
 
+# Colours lifted from public/overlay.html so the burned video and the standalone
+# player look like the same tool. ASS packs colour as &HAABBGGRR — byte-reversed
+# from CSS hex, which is the easy thing to get wrong here.
+C_FRAME = "&H00FDC593"  # #93c5fd
+C_L1 = "&H00FFFFFF"     # #fff
+C_META = "&H00E1D5CB"   # #cbd5e1
+C_L2 = "&H008AE6FD"     # #fde68a
+C_DESC = "&H00F0E8E2"   # #e2e8f0
+C_FLAG_ON = "&H007171F8"   # #f87171
+C_FLAG_OFF = "&H008B7464"  # #64748b
+
+FS_L1, FS_META, FS_L2, FS_DESC, FS_Q = 25, 18, 22, 18, 18
+
+
+def wrap_mono(text: str, width_px: int, font_size: int, margin_px: int = 32) -> list[str]:
+    """Word-wrap to the pixel width, exploiting the fixed advance of a monospace
+    face (~0.6em per glyph). ASS WrapStyle 2 only breaks at explicit \\N, so long
+    descriptions must be wrapped here or they run off the frame."""
+    max_chars = max(20, int((width_px - margin_px) / (font_size * 0.6)))
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > max_chars:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}".strip()
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def build_ass(export: dict, fps: float, width: int, height: int, font: str) -> str:
     """Render the export's L1/L2/Q rows as a timed ASS subtitle track.
 
-    Layout mirrors the in-app HUD so the burned video reads the same as the
-    workspace: L1 on top, L2 under it, Q flags below that.
+    Layout and colours mirror overlay.html — monospace, L1 over L2 over the
+    sub-task description, quality flags pinned bottom-right — so a burned MP4
+    reads identically to the standalone player.
     """
     def t(frame: int) -> float:
         return frame / fps if fps > 0 else 0.0
@@ -122,9 +154,10 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: L1,{font},26,&H00F5A25D,&H00000000,&H80000000,-1,0,1,2,1,7,16,16,44,1
-Style: L2,{font},22,&H0086E5FD,&H00000000,&H80000000,0,0,1,2,1,7,16,16,80,1
-Style: Q,{font},18,&H00FFFFFF,&H00000000,&H80000000,0,0,3,1,0,7,16,16,112,1
+Style: L1,{font},{FS_L1},{C_L1},&H00000000,&H80000000,0,0,1,2,1,7,16,16,52,1
+Style: L2,{font},{FS_L2},{C_L2},&H00000000,&H80000000,0,0,1,2,1,7,16,16,88,1
+Style: DESC,{font},{FS_DESC},{C_DESC},&H00000000,&H80000000,0,0,1,2,1,7,16,16,118,1
+Style: Q,{font},{FS_Q},{C_FLAG_OFF},&H00000000,&H80000000,0,0,3,1,0,3,16,16,16,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -144,21 +177,32 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         task.get("venue_L3"), task.get("job")] if x
         )
         label = ass_escape(task.get("task_label") or "(unlabeled)")
-        tail = f"  [{task.get('task_start_frame')}–{task.get('task_end_frame')}]"
-        text = f"▶ {label}" + (f"   {ass_escape(meta)}" if meta else "") + tail
-        event("L1", int(task.get("task_start_frame", 0)),
-              int(task.get("task_end_frame", 0)), text)
+        start_f = int(task.get("task_start_frame", 0))
+        end_f = int(task.get("task_end_frame", 0))
+        # Bold label at full size, then drop to the smaller grey meta run — the
+        # same visual hierarchy overlay.html gets from nested spans.
+        text = (
+            f"{{\\b1}}▶ {label}{{\\b0\\fs{FS_META}\\c{C_META}}}"
+            + (f"  {ass_escape(meta)}" if meta else "")
+            + f"  [{start_f}–{end_f}]"
+        )
+        event("L1", start_f, end_f, text)
 
     for sub in export.get("L2_subtasks", []):
         label = ass_escape(sub.get("action_label") or "(unlabeled)")
-        hands = []
-        if sub.get("object_left"):
-            hands.append(f"L:{ass_escape(sub['object_left'])}")
-        if sub.get("object_right"):
-            hands.append(f"R:{ass_escape(sub['object_right'])}")
-        text = f"• {label}" + (f"   {'  '.join(hands)}" if hands else "")
-        event("L2", int(sub.get("action_start_frame", 0)),
-              int(sub.get("action_end_frame", 0)), text)
+        left = ass_escape(sub.get("object_left") or "") or "–"
+        right = ass_escape(sub.get("object_right") or "") or "–"
+        start_f = int(sub.get("action_start_frame", 0))
+        end_f = int(sub.get("action_end_frame", 0))
+        text = (
+            f"{{\\b1}}• {label}{{\\b0\\fs{FS_META}\\c{C_META}}}  L:{left} R:{right}"
+        )
+        event("L2", start_f, end_f, text)
+
+        desc = ass_escape(sub.get("description") or "")
+        if desc:
+            event("DESC", start_f, end_f,
+                  "\\N".join(wrap_mono(desc, width, FS_DESC)))
 
     # Q rows are sampled every N frames; hold each until the next sample so the
     # flags stay on screen rather than blinking for a single frame.
@@ -170,9 +214,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         end = int(q_rows[i + 1]["frame_index"]) if i + 1 < len(q_rows) else (
             total_frames if total_frames > start else start + int(max(fps, 1))
         )
-        on = [label for key, label in QUALITY_FLAGS if row.get(key)]
-        text = f"Q@{start}  " + ("  ".join(on) if on else "—")
-        event("Q", start, end, text)
+        # Every flag is listed, lit ones highlighted — like overlay.html. Which
+        # checks were considered and cleared is as informative as which fired.
+        parts = [
+            f"{{\\c{C_FLAG_ON}\\b1}}{label}{{\\c{C_FLAG_OFF}\\b0}}"
+            if row.get(key)
+            else label
+            for key, label in QUALITY_FLAGS
+        ]
+        event("Q", start, end, f"Q@{start}  " + "  ".join(parts))
 
     return "\n".join(lines) + "\n"
 
@@ -220,7 +270,9 @@ def main() -> None:
     # Named explicitly rather than leaning on the "Sans" default: the worker
     # image installs fonts-dejavu-core, and a family that resolves nowhere makes
     # drawtext abort and libass draw nothing.
-    ap.add_argument("--font", default="DejaVu Sans",
+    # Monospace to match overlay.html's ui-monospace HUD. DejaVu Sans Mono ships
+    # in the same fonts-dejavu-core package the worker image already installs.
+    ap.add_argument("--font", default="DejaVu Sans Mono",
                     help="font family (must exist in the rendering environment)")
     ap.add_argument("--report-url", default=None)
     ap.add_argument("--report-secret", default=None)
@@ -288,8 +340,8 @@ def run(args) -> None:
     chain.append(f"ass='{ass_arg}'")
     # The frame counter is the one truly per-frame value, so it stays a drawtext.
     chain.append(
-        f"drawtext=font='{args.font}':text='frame %{{n}}':x=16:y=16:fontsize=24:"
-        "fontcolor=white:borderw=2:bordercolor=black@0.8"
+        f"drawtext=font='{args.font}':text='frame %{{n}}':x=16:y=14:fontsize=28:"
+        "fontcolor=0x93C5FD:borderw=2:bordercolor=black@0.8"
     )
 
     cmd = [ffmpeg_exe(), "-y", "-loglevel", "error", "-stats",

@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
       ? body.clipIds.map((v: unknown) => String(v)).filter(Boolean)
       : [];
     if (clipIds.length === 0) badRequest("Select at least one clip.");
+    // force: re-queue clips stuck in queued/transcoding after a worker restart.
+    const force = Boolean(body?.force);
 
     const results: { clipId: string; ok: boolean; error?: string }[] = [];
     // Sequential on purpose: each call writes the clip's proxyStatus, and the
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest) {
     // hammering the database in parallel.
     for (const clipId of clipIds) {
       try {
-        await triggerTranscode({ clipId });
+        await triggerTranscode({ clipId, force });
         results.push({ clipId, ok: true });
       } catch (e) {
         results.push({ clipId, ok: false, error: (e as Error).message });

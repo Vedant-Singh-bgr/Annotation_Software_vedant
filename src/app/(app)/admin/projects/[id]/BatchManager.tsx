@@ -224,6 +224,10 @@ function BatchCard({
     try {
       const res = await api("/api/admin/clips/bulk-transcode", "POST", {
         clipIds: [...selected],
+        // Selecting a clip and pressing the button is an explicit instruction to
+        // run it, so clear any stale in-flight state left by a killed worker
+        // rather than silently reporting it as skipped.
+        force: true,
       });
       // Name the first couple of skip reasons — "3 skipped" alone doesn't tell
       // you whether they were already running or had nothing to transcode.
@@ -729,12 +733,12 @@ function TranscodeProxyForm({
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  async function runTranscode() {
+  async function runTranscode(force = false) {
     setBusy("run");
     setErr(null);
     setOk(null);
     try {
-      await api(`/api/admin/clips/${clip.id}/transcode`, "POST");
+      await api(`/api/admin/clips/${clip.id}/transcode`, "POST", { force });
       setOk("Transcode started — it will report back and flip to ready.");
       setTimeout(onDone, 800);
     } catch (e) {
@@ -776,7 +780,7 @@ function TranscodeProxyForm({
       <div className="flex items-center gap-2">
         <button
           className="btn-ghost text-xs"
-          onClick={runTranscode}
+          onClick={() => runTranscode()}
           disabled={
             busy !== null ||
             clip.proxyStatus === "queued" ||
@@ -797,6 +801,16 @@ function TranscodeProxyForm({
               : clip.sessionId
                 ? "downloading blobs + encoding (a few minutes)"
                 : "downloading the source video + encoding (a few minutes)"}
+            {/* A worker killed mid-job (redeploy, OOM) never reports back, so
+                the clip sits here forever. This is the way out. */}
+            <button
+              onClick={() => runTranscode(true)}
+              disabled={busy !== null}
+              title="Worker restarted mid-job? Clear the stuck state and queue it again."
+              className="ml-1 text-ink-400 underline transition-colors duration-150 hover:text-ink-900"
+            >
+              stuck? re-queue
+            </button>
           </span>
         ) : (
           <span className="text-[11px] text-ink-400">
