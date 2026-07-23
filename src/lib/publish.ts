@@ -103,6 +103,10 @@ export type BatchPublishEntry = {
   sessionId: string | null;
   annotator: string;
   proxyR2Key: string | null;
+  // The original uploaded object, so a consumer can pair labels with the
+  // untouched video straight from the manifest — without it, the manifest only
+  // points at the downscaled proxy.
+  sourceR2Key: string | null;
   exportR2Key: string | null;
   exportedAt: string | null;
   error: string | null;
@@ -153,6 +157,7 @@ export async function publishBatchExports(batchId: string): Promise<BatchPublish
       sessionId: a.clip.sessionId,
       annotator: a.annotator.name,
       proxyR2Key: a.clip.proxyR2Key ?? null,
+      sourceR2Key: a.clip.r2Key ?? null,
       exportR2Key: null,
       exportedAt: null,
       error: null,

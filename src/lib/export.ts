@@ -13,6 +13,7 @@ export async function buildAssignmentExport(assignment: {
     title: string;
     fps: number;
     frameCount: number | null;
+    r2Key?: string | null;
     sessionId: string | null;
     sessionHash: string | null;
     dataType: string | null;
@@ -126,6 +127,12 @@ export async function buildAssignmentExport(assignment: {
       proxy_status: clip.proxyStatus,
       // The exact MP4 these labels describe — the JSON is stored beside it in R2.
       proxy_r2_key: clip.proxyR2Key ?? null,
+      // The ORIGINAL object the proxy was built from, so these labels can be
+      // replayed against the untouched upload rather than the downscaled proxy.
+      // Frame indices are identical in both (the transcode is constant frame
+      // rate and adds/drops no frames), so only the pixels differ. For sessions
+      // this is null — segments[] below, keyed by sha256, is the source of truth.
+      source_r2_key: clip.r2Key ?? null,
       segments: segments.map((s) => ({
         order: s.orderIndex,
         logical_path: s.logicalPath,
