@@ -4,6 +4,12 @@ import { useMemo, useState } from "react";
 import { FrameQuality } from "./shared";
 import { FRAME_QUALITY_FLAGS, sampledFrames } from "@/lib/kosha";
 
+// "real_work" → "Real work"
+function humanize(label: string): string {
+  const s = label.replace(/_/g, " ");
+  return s[0].toUpperCase() + s.slice(1);
+}
+
 export default function QualityPanel({
   frameCount,
   sampleEveryN,
@@ -29,7 +35,7 @@ export default function QualityPanel({
 
   if (!frameCount) {
     return (
-      <p className="rounded-md border border-ink-700 p-4 text-center text-xs text-slate-500">
+      <p className="py-6 text-center text-sm text-ink-500">
         Waiting for the video duration to load so sampled frames can be computed…
       </p>
     );
@@ -52,70 +58,70 @@ export default function QualityPanel({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">Q Frame quality</h3>
-        <span className="text-xs text-slate-500">
-          {done}/{frames.length} sampled
+    <div className="space-y-4">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-medium text-ink-900">Frame quality</h3>
+        <span className="text-xs tabular-nums text-ink-500">
+          {done} of {frames.length} reviewed
         </span>
       </div>
 
-      <p className="text-[11px] text-slate-500">
-        Sampling every {sampleEveryN}th frame. Judge each flag on the frame itself.
+      <p className="text-xs text-ink-500">
+        Every {sampleEveryN}th frame is sampled. Judge each flag on the frame itself.
       </p>
 
-      <div className="flex items-center justify-between rounded-md border border-ink-700 bg-ink-900 px-3 py-2">
-        <button className="btn-ghost px-2 py-1 text-xs" onClick={() => go(-1)}>
-          ← prev
+      {/* sampled-frame pager — the readout doubles as "seek to this frame" */}
+      <div className="flex items-center justify-between">
+        <button className="btn-ghost h-7 px-2 text-xs" onClick={() => go(-1)}>
+          ← Prev
         </button>
-        <div className="text-center">
-          <div className="font-mono text-sm text-white">frame {frame}</div>
-          <div className="text-[11px] text-slate-500">
-            {clampedIdx + 1} / {frames.length}
-          </div>
-        </div>
-        <button className="btn-ghost px-2 py-1 text-xs" onClick={() => go(1)}>
-          next →
+        <button
+          onClick={() => onSeek(frame)}
+          title="Seek the video to this frame"
+          className="group text-center"
+        >
+          <span className="font-mono text-sm tabular-nums text-ink-900 transition-colors duration-150 group-hover:text-accent-blue">
+            frame {frame}
+          </span>
+          <span className="block text-[11px] text-ink-400">
+            {clampedIdx + 1} of {frames.length}
+          </span>
+        </button>
+        <button className="btn-ghost h-7 px-2 text-xs" onClick={() => go(1)}>
+          Next →
         </button>
       </div>
 
-      <button
-        className="btn-ghost w-full py-1 text-xs"
-        onClick={() => onSeek(frame)}
-      >
-        Seek video to this frame
-      </button>
-
-      <div className="space-y-1">
-        {FRAME_QUALITY_FLAGS.map((f) => {
-          const on = val(f.key);
-          return (
-            <label
-              key={f.key}
-              className={`flex cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-sm ${
-                f.primary ? "border-brand-600/40 bg-brand-600/5" : "border-ink-700"
-              }`}
-            >
-              <span className={f.primary ? "font-medium text-slate-100" : "text-slate-300"}>
-                {f.label}
-                {f.primary && (
-                  <span className="ml-2 text-[10px] text-slate-500">(primary)</span>
-                )}
-              </span>
-              <input
-                type="checkbox"
-                disabled={!editable}
-                checked={on}
-                onChange={(e) => onUpsert(frame, { [f.key]: e.target.checked } as Partial<FrameQuality>)}
-              />
-            </label>
-          );
-        })}
+      <div className="divide-y divide-ink-900/10 border-t border-ink-900/10">
+        {FRAME_QUALITY_FLAGS.map((f) => (
+          <label
+            key={f.key}
+            className="flex cursor-pointer items-center justify-between py-2 text-sm"
+          >
+            <span className={f.primary ? "font-medium text-ink-900" : "text-ink-700"}>
+              {humanize(f.label)}
+              {f.primary && (
+                <span className="ml-1.5 text-[10px] uppercase tracking-[0.08em] text-ink-400">
+                  primary
+                </span>
+              )}
+            </span>
+            <input
+              type="checkbox"
+              disabled={!editable}
+              checked={val(f.key)}
+              onChange={(e) =>
+                onUpsert(frame, { [f.key]: e.target.checked } as Partial<FrameQuality>)
+              }
+            />
+          </label>
+        ))}
       </div>
 
-      <div className="text-[11px] text-slate-500">
-        Current playhead: frame {currentFrame}
-      </div>
+      <p className="text-xs text-ink-400">
+        Playhead at frame{" "}
+        <span className="font-mono tabular-nums">{currentFrame}</span>
+      </p>
     </div>
   );
 }

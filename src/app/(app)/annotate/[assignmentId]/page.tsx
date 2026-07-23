@@ -6,7 +6,7 @@ import { resolveClipUrl } from "@/lib/r2";
 import { getAuthorizedAssignment, canEditAnnotations } from "@/lib/access";
 import { parseFlags, TAXONOMY_TYPES } from "@/lib/kosha";
 import KoshaWorkspace from "@/components/kosha/KoshaWorkspace";
-import type { Task } from "@/components/kosha/shared";
+import type { ClipListItem, Task } from "@/components/kosha/shared";
 import PublishButton from "@/app/(app)/review/PublishButton";
 
 type Props = { params: Promise<{ assignmentId: string }> };
@@ -25,7 +25,7 @@ export default async function AnnotatePage({ params }: Props) {
   const clip = assignment.clip;
   const batch = clip.batch;
 
-  const [dbTasks, dbQuality, taxItems, resolved] = await Promise.all([
+  const [dbTasks, dbQuality, taxItems, resolved, queue] = await Promise.all([
     prisma.task.findMany({
       where: { assignmentId },
       orderBy: { startFrame: "asc" },
@@ -40,7 +40,31 @@ export default async function AnnotatePage({ params }: Props) {
       orderBy: { sortOrder: "asc" },
     }),
     resolveClipUrl(clip),
+    // Clip queue for the left sidebar + Prev/Next walking. Annotators see all
+    // of their own assignments (same shape as the annotator dashboard query);
+    // reviewers/admins see the assignments of the batch they're reviewing.
+    // Ordered by createdAt so the queue stays stable while working (the
+    // dashboard's updatedAt ordering would reshuffle on every edit).
+    prisma.assignment.findMany({
+      where:
+        user.role === "ANNOTATOR"
+          ? { annotatorId: user.id }
+          : { clip: { batchId: clip.batchId } },
+      orderBy: { createdAt: "asc" },
+      include: { clip: { include: { batch: { include: { project: true } } } } },
+    }),
   ]);
+
+  const clips: ClipListItem[] = queue.map((a) => ({
+    assignmentId: a.id,
+    title: a.clip.title,
+    status: a.status,
+    projectName: a.clip.batch.project.name,
+    batchName: a.clip.batch.name,
+    fps: a.clip.fps,
+    frameCount: a.clip.frameCount,
+    durationSec: a.clip.durationSec,
+  }));
 
   const tasks: Task[] = dbTasks.map((t) => ({
     id: t.id,
@@ -80,13 +104,13 @@ export default async function AnnotatePage({ params }: Props) {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2 text-sm text-slate-400">
-        <Link href="/dashboard" className="hover:text-slate-200">
+      <div className="mb-4 flex items-center gap-2 text-sm text-ink-500">
+        <Link href="/dashboard" className="transition-colors duration-150 hover:text-ink-900">
           ← Back
         </Link>
         <span>/</span>
         <span>{batch.project.name}</span>
-        <span className="text-slate-600">· {batch.name}</span>
+        <span className="text-ink-400">· {batch.name}</span>
         {canReview && (
           <div className="ml-auto">
             <PublishButton
@@ -100,7 +124,7 @@ export default async function AnnotatePage({ params }: Props) {
       </div>
 
       {!resolved ? (
-        <div className="card p-8 text-center text-sm text-slate-400">
+        <div className="card p-8 text-center text-sm text-ink-500">
           This clip has no playable source. Set an R2 key (with R2 creds) or a
           fallback source URL.
         </div>
@@ -118,6 +142,7 @@ export default async function AnnotatePage({ params }: Props) {
           editable={editable}
           canReview={canReview}
           taxonomies={taxonomies}
+          clips={clips}
           initialTasks={tasks}
           initialQuality={dbQuality.map((q) => ({
             frameIndex: q.frameIndex,

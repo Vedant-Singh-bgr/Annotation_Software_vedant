@@ -49,8 +49,9 @@ function tiling(task: VTask): { gapFrames: number; overlapFrames: number } {
   return { gapFrames, overlapFrames };
 }
 
+// Human name for a task in checklist copy: its label, or its frame range.
 function label(t: VTask): string {
-  return t.label || `task[${t.startFrame}–${t.endFrame}]`;
+  return t.label ? `“${t.label}”` : `${t.startFrame}–${t.endFrame}`;
 }
 
 // Sub-task tiling is checked to the guideline's L2 boundary precision (±15
@@ -93,7 +94,7 @@ export function validateSubmission(input: {
   const { tasks, fps } = input;
 
   if (tasks.length === 0) {
-    errors.push({ code: "no_tasks", message: "No L1 tasks — find and label every long-horizon task." });
+    errors.push({ code: "no_tasks", message: "No tasks yet — find and label every long-horizon task." });
   }
 
   // L1 must not overlap (distinct spans with gaps between them).
@@ -104,7 +105,7 @@ export function validateSubmission(input: {
       if (ov > 0)
         errors.push({
           code: "l1_overlap",
-          message: `L1 tasks overlap: ${label(sorted[i])} ∩ ${label(sorted[j])} (${ov}f).`,
+          message: `Tasks ${label(sorted[i])} and ${label(sorted[j])} overlap by ${ov}f.`,
         });
     }
   }
@@ -112,59 +113,59 @@ export function validateSubmission(input: {
   for (const t of tasks) {
     const name = label(t);
     if (!t.label.trim())
-      errors.push({ code: "task_label", message: `Task ${name} has no task_label (verb_noun).` });
+      errors.push({ code: "task_label", message: `Task ${name} needs a label.` });
     if (t.endFrame <= t.startFrame)
-      errors.push({ code: "task_span", message: `Task ${name} has a non-positive span.` });
+      errors.push({ code: "task_span", message: `Task ${name} ends before it starts.` });
     else if (fps > 0) {
       const d = secs(t.endFrame - t.startFrame, fps);
       if (d < L1_MIN_SEC || d > L1_MAX_SEC)
         warnings.push({
           code: "task_duration",
-          message: `Task ${name} is ${d.toFixed(1)}s (guideline: L1 usually 30s–15min).`,
+          message: `Task ${name} runs ${d.toFixed(1)}s — tasks are usually 30s to 15min.`,
         });
     }
 
     const needsEnv = t.qualityFlags.includes("needs_env_review");
     if (!t.difficulty)
-      warnings.push({ code: "task_difficulty", message: `Task ${name} has no difficulty.` });
+      warnings.push({ code: "task_difficulty", message: `Task ${name} needs a difficulty.` });
     if (!needsEnv && (!t.venueL2 || !t.venueL3 || !t.job))
       warnings.push({
         code: "task_taxonomy",
-        message: `Task ${name} is missing venue_L2/venue_L3/job (or add needs_env_review).`,
+        message: `Task ${name} is missing its venue or job — fill them in, or flag it needs_env_review.`,
       });
 
     // Sub-tasks must fully tile the task, no gaps/overlaps.
     if (t.subTasks.length === 0) {
-      warnings.push({ code: "no_subtasks", message: `Task ${name} has no sub-tasks tiling it.` });
+      warnings.push({ code: "no_subtasks", message: `Task ${name} has no sub-tasks yet.` });
     } else {
       const { gapFrames, overlapFrames } = tiling(t);
       const span = t.endFrame - t.startFrame;
       if (gapFrames > COVERAGE_TOLERANCE_FRAMES)
         errors.push({
           code: "subtask_gap",
-          message: `Task ${name}: sub-tasks cover ${span - gapFrames}/${span}f — ${gapFrames}f uncovered. Add sub-tasks (use + idle_wait for pauses).`,
+          message: `Task ${name}: sub-tasks cover ${span - gapFrames}/${span}f — add sub-tasks for the remaining ${gapFrames}f (idle_wait covers pauses).`,
         });
       else if (gapFrames > 0)
-        warnings.push({ code: "subtask_gap_small", message: `Task ${name}: ${gapFrames}f uncovered (within ±${COVERAGE_TOLERANCE_FRAMES}f tolerance).` });
+        warnings.push({ code: "subtask_gap_small", message: `Task ${name} has ${gapFrames}f uncovered — within the ±${COVERAGE_TOLERANCE_FRAMES}f tolerance.` });
       if (overlapFrames > COVERAGE_TOLERANCE_FRAMES)
-        errors.push({ code: "subtask_overlap", message: `Task ${name} sub-tasks overlap by ${overlapFrames}f.` });
+        errors.push({ code: "subtask_overlap", message: `Task ${name}: sub-tasks overlap by ${overlapFrames}f.` });
       else if (overlapFrames > 0)
-        warnings.push({ code: "subtask_overlap_small", message: `Task ${name}: sub-tasks overlap by ${overlapFrames}f (within ±${COVERAGE_TOLERANCE_FRAMES}f tolerance).` });
+        warnings.push({ code: "subtask_overlap_small", message: `Task ${name}: sub-tasks overlap by ${overlapFrames}f — within the ±${COVERAGE_TOLERANCE_FRAMES}f tolerance.` });
       for (const s of t.subTasks) {
         if (!s.label.trim())
-          errors.push({ code: "subtask_label", message: `A sub-task in ${name} has no action_label.` });
+          errors.push({ code: "subtask_label", message: `A sub-task in task ${name} needs a label.` });
         else {
           const tokens = s.label.trim().split("_").filter(Boolean).length;
           if (tokens < 2 || tokens > 5)
             warnings.push({
               code: "subtask_tokens",
-              message: `Sub-task "${s.label}" should be 2–5 snake_case tokens.`,
+              message: `Sub-task “${s.label}” should be 2–5 words joined by underscores.`,
             });
         }
         if (!s.description.trim())
           warnings.push({
             code: "subtask_desc",
-            message: `Sub-task "${s.label || "?"}" in ${name} has no description.`,
+            message: `Sub-task “${s.label || "unlabeled"}” in task ${name} needs a description.`,
           });
         if (fps > 0 && s.endFrame > s.startFrame) {
           const d = secs(s.endFrame - s.startFrame, fps);
@@ -172,7 +173,7 @@ export function validateSubmission(input: {
           if (s.label.trim() !== "idle_wait" && (d < L2_MIN_SEC || d > L2_MAX_SEC))
             warnings.push({
               code: "subtask_duration",
-              message: `Sub-task "${s.label || "?"}" is ${d.toFixed(1)}s (guideline: L2 usually 1–5s).`,
+              message: `Sub-task “${s.label || "unlabeled"}” runs ${d.toFixed(1)}s — sub-tasks are usually 1–5s.`,
             });
         }
       }
@@ -183,7 +184,7 @@ export function validateSubmission(input: {
   if (input.totalQFrames > 0 && input.reviewedQFrames < input.totalQFrames) {
     warnings.push({
       code: "q_incomplete",
-      message: `Frame quality reviewed on ${input.reviewedQFrames}/${input.totalQFrames} sampled frames.`,
+      message: `Frame quality reviewed on ${input.reviewedQFrames} of ${input.totalQFrames} sampled frames.`,
     });
   }
 

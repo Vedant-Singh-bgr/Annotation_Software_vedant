@@ -37,6 +37,18 @@ export type FrameQuality = {
   notes: string;
 };
 
+// One row in the annotator's clip queue (left sidebar + prev/next walking).
+export type ClipListItem = {
+  assignmentId: string;
+  title: string;
+  status: string;
+  projectName: string;
+  batchName: string;
+  fps: number;
+  frameCount: number | null;
+  durationSec: number | null;
+};
+
 export type Taxonomies = {
   VENUE_L2: string[];
   VENUE_L3: string[];

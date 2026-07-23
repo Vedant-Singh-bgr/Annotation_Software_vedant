@@ -43,32 +43,32 @@ export default function VideoOverlay({
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 p-3 font-mono text-[13px] [text-shadow:0_1px_3px_#000]">
-      <div className="text-lg font-bold text-brand-300">frame {currentFrame}</div>
+      <div className="text-lg font-bold text-accent-blue">frame {currentFrame}</div>
 
       <div className="mt-1 text-white">
         {l1 ? (
           <>
             ▶ <b>{l1.label || "(unlabeled)"}</b>{" "}
-            <span className="text-[11px] text-slate-300">
+            <span className="text-[11px] text-white/70">
               {[l1.difficulty, l1.venueL2, l1.venueL3, l1.job].filter(Boolean).join(" · ")}
               {" "}[{l1.startFrame}–{l1.endFrame}]
             </span>
           </>
         ) : (
-          <span className="text-slate-400">— no L1 task at this frame (gap) —</span>
+          <span className="text-white/50">— no L1 task at this frame (gap) —</span>
         )}
       </div>
 
-      <div className="mt-0.5 text-amber-200">
+      <div className="mt-0.5 text-[#fde68a]">
         {l2 ? (
           <>
             • <b>{l2.label || "(unlabeled)"}</b>{" "}
-            <span className="text-[11px] text-slate-200">
+            <span className="text-[11px] text-white/80">
               L:{l2.objectLeft || "–"} R:{l2.objectRight || "–"}
             </span>
           </>
         ) : l1 ? (
-          <span className="text-slate-400">• no sub-task here (gap in tiling)</span>
+          <span className="text-white/50">• no sub-task here (gap in tiling)</span>
         ) : null}
       </div>
 
@@ -78,7 +78,7 @@ export default function VideoOverlay({
           {FRAME_QUALITY_FLAGS.map((f) => {
             const on = (q as unknown as Record<string, boolean>)[f.key];
             return (
-              <span key={f.key} className={on ? "font-bold text-red-400" : "text-slate-500"}>
+              <span key={f.key} className={on ? "font-bold text-[#ff7a66]" : "text-white/40"}>
                 {" "}
                 {f.label}
               </span>

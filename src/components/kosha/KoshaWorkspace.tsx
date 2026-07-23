@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { frameToTime, sampledFrames, parseFlags } from "@/lib/kosha";
 import { validateSubmission } from "@/lib/validate";
-import { Task, SubTask, FrameQuality, Taxonomies, api, coverage } from "./shared";
-import TasksPanel from "./TasksPanel";
-import SubTasksPanel from "./SubTasksPanel";
+import { Task, SubTask, FrameQuality, Taxonomies, ClipListItem, api, coverage } from "./shared";
+import AnnotationsPanel from "./AnnotationsPanel";
 import QualityPanel from "./QualityPanel";
 import VideoOverlay from "./VideoOverlay";
+import TimelineBoard from "./TimelineBoard";
+import ClipsSidebar from "./ClipsSidebar";
+import StatusBadge from "@/components/StatusBadge";
 
 type Props = {
   assignmentId: string;
@@ -25,9 +27,10 @@ type Props = {
   taxonomies: Taxonomies;
   initialTasks: Task[];
   initialQuality: FrameQuality[];
+  clips: ClipListItem[];
 };
 
-type Tab = "tasks" | "subtasks" | "quality";
+type Tab = "annotations" | "quality";
 
 export default function KoshaWorkspace(props: Props) {
   const { assignmentId, fps, editable, canReview } = props;
@@ -44,7 +47,12 @@ export default function KoshaWorkspace(props: Props) {
     props.initialTasks[0]?.id ?? null,
   );
   const [selectedSubId, setSelectedSubId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("tasks");
+  const [tab, setTab] = useState<Tab>("annotations");
+  // Annotations panel drill-down: "list" shows the outline, "editor" swaps the
+  // whole panel to the selected item's detail form.
+  const [panelView, setPanelView] = useState<"list" | "editor">("list");
+  // QA checklist disclosure — collapsed by default, the counts tell the story.
+  const [checklistOpen, setChecklistOpen] = useState(false);
 
   // Pin the presigned video URL to its first value. It's valid for R2_URL_TTL
   // (~1h); freezing it means re-renders/refreshes never swap the <video> src and
@@ -55,7 +63,6 @@ export default function KoshaWorkspace(props: Props) {
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(1);
   const [windowSec, setWindowSec] = useState(30); // annotation viewport size (paging only)
-  const [frameInput, setFrameInput] = useState(""); // "go to frame" box
   const [pendingIn, setPendingIn] = useState<number | null>(null);
   const [pendingOut, setPendingOut] = useState<number | null>(null);
 
@@ -65,9 +72,25 @@ export default function KoshaWorkspace(props: Props) {
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
+  // Mirror of `tasks` for callbacks that must read the freshest state without
+  // re-binding (drag commits, keyboard nudges).
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+
   const flash = useCallback((m: string) => {
     setToast(m);
     window.setTimeout(() => setToast(null), 1800);
+  }, []);
+
+  // Scroll the detail editor for the current selection into view (used after
+  // timeline clicks and task creation, so focus keeps flowing).
+  const scrollEditorIntoView = useCallback((which: "task" | "sub") => {
+    // Wait one tick so the panel for the new selection is mounted first.
+    window.setTimeout(() => {
+      document
+        .getElementById(which === "task" ? "kosha-task-editor" : "kosha-sub-editor")
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 80);
   }, []);
 
   // ── video wiring ──────────────────────────────────────────────────────────
@@ -267,15 +290,17 @@ export default function KoshaWorkspace(props: Props) {
       setSelectedTaskId(task.id);
       setPendingIn(null);
       setPendingOut(null);
-      setTab("tasks");
+      setTab("annotations");
+      setPanelView("editor");
       if (status === "ASSIGNED") setStatus("IN_PROGRESS");
+      scrollEditorIntoView("task"); // keep focus flowing straight into the editor
       flash("Task created");
     } catch (e) {
       flash((e as Error).message);
     } finally {
       setSaving(false);
     }
-  }, [editable, pendingIn, pendingOut, currentFrame, fps, assignmentId, status, flash, tasks]);
+  }, [editable, pendingIn, pendingOut, currentFrame, fps, assignmentId, status, flash, tasks, scrollEditorIntoView]);
 
   const updateTask = useCallback(
     (id: string, patch: Partial<Task>) => {
@@ -384,6 +409,164 @@ export default function KoshaWorkspace(props: Props) {
     [tasks, selectedSubId, flash],
   );
 
+  // ── selection (timeline blocks + outline rows share one model) ───────────
+  const selectTaskInPanel = useCallback((id: string) => {
+    setSelectedTaskId(id);
+    setSelectedSubId(null);
+  }, []);
+
+  const selectSubInPanel = useCallback((taskId: string, subId: string) => {
+    setSelectedTaskId(taskId);
+    setSelectedSubId(subId);
+  }, []);
+
+  const selectTaskFromBoard = useCallback(
+    (id: string) => {
+      setSelectedTaskId(id);
+      setSelectedSubId(null);
+      setTab("annotations");
+      setPanelView("editor");
+      scrollEditorIntoView("task");
+    },
+    [scrollEditorIntoView],
+  );
+
+  const selectSubFromBoard = useCallback(
+    (taskId: string, subId: string) => {
+      setSelectedTaskId(taskId);
+      setSelectedSubId(subId);
+      setTab("annotations");
+      setPanelView("editor");
+      scrollEditorIntoView("sub");
+    },
+    [scrollEditorIntoView],
+  );
+
+  // ── drag commit (timeline blocks) ─────────────────────────────────────────
+  // Optimistic: local state is set to the dragged span immediately; the PATCH
+  // goes through the existing endpoints; on failure we revert to the pre-drag
+  // snapshot. Moving a task shifts its sub-tasks along (containment preserved:
+  // task span is widened/committed first, then children).
+  const commitDrag = useCallback(
+    async (
+      kind: "task" | "subtask",
+      id: string,
+      next: { startFrame: number; endFrame: number },
+      mode: "move" | "start" | "end",
+    ) => {
+      const snapshot = tasksRef.current;
+      // Drop any queued debounced frame edits for this entity so a stale
+      // debounce doesn't clobber the drag result 500ms later.
+      if (pending.current[id]) {
+        delete pending.current[id].patch.startFrame;
+        delete pending.current[id].patch.endFrame;
+      }
+      if (kind === "task") {
+        const t = snapshot.find((x) => x.id === id);
+        if (!t || (t.startFrame === next.startFrame && t.endFrame === next.endFrame)) return;
+        const delta = next.startFrame - t.startFrame;
+        const shiftKids = mode === "move" && delta !== 0 && t.subTasks.length > 0;
+        setTasks((prev) =>
+          prev
+            .map((x) =>
+              x.id === id
+                ? {
+                    ...x,
+                    ...next,
+                    subTasks: shiftKids
+                      ? x.subTasks.map((s) => ({
+                          ...s,
+                          startFrame: s.startFrame + delta,
+                          endFrame: s.endFrame + delta,
+                        }))
+                      : x.subTasks,
+                  }
+                : x,
+            )
+            .sort((a, b) => a.startFrame - b.startFrame),
+        );
+        setSaving(true);
+        try {
+          await api(`/api/tasks/${id}`, "PATCH", next);
+          if (shiftKids) {
+            await Promise.all(
+              t.subTasks.map((s) =>
+                api(`/api/subtasks/${s.id}`, "PATCH", {
+                  startFrame: s.startFrame + delta,
+                  endFrame: s.endFrame + delta,
+                }),
+              ),
+            );
+          }
+        } catch (e) {
+          flash((e as Error).message);
+          setTasks(snapshot);
+          if (shiftKids) resyncTasks(); // some children may have moved — take server truth
+        } finally {
+          setSaving(false);
+        }
+      } else {
+        const parent = snapshot.find((x) => x.subTasks.some((s) => s.id === id));
+        const s0 = parent?.subTasks.find((s) => s.id === id);
+        if (!s0 || (s0.startFrame === next.startFrame && s0.endFrame === next.endFrame)) return;
+        setTasks((prev) =>
+          prev.map((x) => ({
+            ...x,
+            subTasks: x.subTasks
+              .map((s) => (s.id === id ? { ...s, ...next } : s))
+              .sort((a, b) => a.startFrame - b.startFrame),
+          })),
+        );
+        setSaving(true);
+        try {
+          await api(`/api/subtasks/${id}`, "PATCH", next);
+        } catch (e) {
+          flash((e as Error).message);
+          setTasks(snapshot);
+        } finally {
+          setSaving(false);
+        }
+      }
+    },
+    [flash, resyncTasks],
+  );
+
+  // ── keyboard nudge for the selected block ([ / ] keys) ────────────────────
+  const nudge = useCallback(
+    (edge: "start" | "end", delta: number) => {
+      if (!editable) return;
+      const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+      const t = tasksRef.current.find((x) => x.id === selectedTaskId);
+      if (!t) return;
+      const sub = t.subTasks.find((s) => s.id === selectedSubId) ?? null;
+      const fcMax = (frameCount ?? 0) > 0 ? (frameCount as number) : Number.POSITIVE_INFINITY;
+      if (sub) {
+        if (edge === "start") {
+          const v = clampN(sub.startFrame + delta, t.startFrame, sub.endFrame - 1);
+          if (v !== sub.startFrame) updateSub(sub.id, { startFrame: v });
+        } else {
+          const v = clampN(sub.endFrame + delta, sub.startFrame + 1, t.endFrame);
+          if (v !== sub.endFrame) updateSub(sub.id, { endFrame: v });
+        }
+      } else {
+        const subMin = t.subTasks.length
+          ? Math.min(...t.subTasks.map((s) => s.startFrame))
+          : Number.POSITIVE_INFINITY;
+        const subMax = t.subTasks.length
+          ? Math.max(...t.subTasks.map((s) => s.endFrame))
+          : Number.NEGATIVE_INFINITY;
+        if (edge === "start") {
+          const v = clampN(t.startFrame + delta, 0, Math.min(t.endFrame - 1, subMin));
+          if (v !== t.startFrame) updateTask(t.id, { startFrame: v });
+        } else {
+          const v = clampN(t.endFrame + delta, Math.max(t.startFrame + 1, subMax), fcMax);
+          if (v !== t.endFrame) updateTask(t.id, { endFrame: v });
+        }
+      }
+    },
+    [editable, selectedTaskId, selectedSubId, updateTask, updateSub, frameCount],
+  );
+
   // ── quality ops ───────────────────────────────────────────────────────────
   const upsertQuality = useCallback(
     async (frameIndex: number, patch: Partial<FrameQuality>) => {
@@ -440,7 +623,7 @@ export default function KoshaWorkspace(props: Props) {
       );
       setStatus(assignment.status);
       setReviewNote(assignment.reviewNote ?? reviewNote);
-      flash(`Task ${assignment.status.toLowerCase()}`);
+      flash(`Task ${assignment.status.toLowerCase().replace(/_/g, " ")}`);
       router.refresh();
     } catch (e) {
       flash((e as Error).message);
@@ -470,6 +653,14 @@ export default function KoshaWorkspace(props: Props) {
       } else if (e.key.toLowerCase() === "o") {
         setPendingOut(currentFrame);
         flash(`Out: frame ${currentFrame}`);
+      } else if (e.code === "BracketLeft" || e.code === "BracketRight") {
+        // [ / ] nudge the selected block's start/end by 1 frame (Shift = 10).
+        // Default grows the span outward; Alt reverses to trim inward.
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const edge = e.code === "BracketLeft" ? ("start" as const) : ("end" as const);
+        const dir = (e.code === "BracketLeft" ? -1 : 1) * (e.altKey ? -1 : 1);
+        nudge(edge, dir * step);
       } else if (e.key === "Escape") {
         setPendingIn(null);
         setPendingOut(null);
@@ -477,7 +668,7 @@ export default function KoshaWorkspace(props: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [currentFrame, togglePlay, seekFrame, flash]);
+  }, [currentFrame, togglePlay, seekFrame, flash, nudge]);
 
   // ── live QA (guideline §6) ────────────────────────────────────────────────
   const validation = validateSubmission({
@@ -505,13 +696,11 @@ export default function KoshaWorkspace(props: Props) {
 
   // ── timeline geometry ─────────────────────────────────────────────────────
   const fc = frameCount ?? 0;
-  const pct = (f: number) => (fc > 0 ? (f / fc) * 100 : 0);
 
-  function onTimelineClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (fc <= 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    seekFrame(Math.round(((e.clientX - rect.left) / rect.width) * fc));
-  }
+  // Queue position for Prev/Next clip walking (sidebar order).
+  const qIdx = props.clips.findIndex((c) => c.assignmentId === assignmentId);
+  const prevClip = qIdx > 0 ? props.clips[qIdx - 1] : null;
+  const nextClip = qIdx >= 0 && qIdx < props.clips.length - 1 ? props.clips[qIdx + 1] : null;
 
   // ── annotation windows (viewport paging over the continuous session) ───────
   // Data stays session-global; windows only make a long (e.g. 2-hour) session
@@ -530,18 +719,44 @@ export default function KoshaWorkspace(props: Props) {
   const windowed = fc > windowFrames;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_400px]">
+    <div className="flex items-start gap-4">
+      {/* Far left: clip queue for fast switching */}
+      {props.clips.length > 0 && (
+        <ClipsSidebar clips={props.clips} currentId={assignmentId} />
+      )}
+
+      <div className="grid min-w-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
       {/* Left: video + timeline */}
       <div className="min-w-0">
-        <div className="mb-2 flex items-center justify-between">
-          <h1 className="truncate text-lg font-semibold text-white">{props.clipTitle}</h1>
-          <span className="text-xs text-slate-500">
+        <div className="mb-2 flex items-center gap-3">
+          <h1 className="min-w-0 truncate font-serif text-lg text-ink-900">{props.clipTitle}</h1>
+          <span className="ml-auto shrink-0 text-xs text-ink-500">
             {fps} fps · {props.videoSource === "r2" ? "R2" : "direct"} ·{" "}
             {fc ? `${fc} frames` : "loading…"}
           </span>
+          {props.clips.length > 1 && (
+            <div className="flex shrink-0 gap-1">
+              <button
+                className="btn-ghost h-7 px-2 text-xs"
+                disabled={!prevClip}
+                title={prevClip ? `Previous clip: ${prevClip.title}` : "First clip in your queue"}
+                onClick={() => prevClip && router.push(`/annotate/${prevClip.assignmentId}`)}
+              >
+                ← Prev
+              </button>
+              <button
+                className="btn-ghost h-7 px-2 text-xs"
+                disabled={!nextClip}
+                title={nextClip ? `Next clip: ${nextClip.title}` : "Last clip in your queue"}
+                onClick={() => nextClip && router.push(`/annotate/${nextClip.assignmentId}`)}
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="relative overflow-hidden rounded-lg border border-ink-700 bg-black">
+        <div className="relative overflow-hidden rounded-lg border border-ink-900/10 bg-black">
           <video
             ref={videoRef}
             src={videoUrl}
@@ -554,56 +769,52 @@ export default function KoshaWorkspace(props: Props) {
           )}
         </div>
 
-        {/* transport */}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button onMouseDown={keepFocus} onClick={togglePlay} className="btn-ghost w-20">
-            {playing ? "❚❚ Pause" : "▶ Play"}
-          </button>
+        {/* transport: one segmented cluster + click-to-edit frame readout */}
+        <div className="mt-2 flex flex-wrap items-center gap-3">
           <button
             onMouseDown={keepFocus}
             onClick={() => setShowOverlay((v) => !v)}
             title="Toggle the live label overlay on the video"
-            className={`btn-ghost ${showOverlay ? "text-brand-400" : "text-slate-500"}`}
+            className={`btn-ghost h-9 px-2.5 text-sm ${showOverlay ? "text-accent-blue" : "text-ink-400"}`}
           >
-            ⊞ Overlay
+            ⊞
           </button>
-          <button onMouseDown={keepFocus} onClick={() => seekFrame(currentFrame - 10)} className="btn-ghost">−10f</button>
-          <button onMouseDown={keepFocus} onClick={() => seekFrame(currentFrame - 1)} className="btn-ghost">−1f</button>
-          <button onMouseDown={keepFocus} onClick={() => seekFrame(currentFrame + 1)} className="btn-ghost">+1f</button>
-          <button onMouseDown={keepFocus} onClick={() => seekFrame(currentFrame + 10)} className="btn-ghost">+10f</button>
-          <div className="rounded-md bg-ink-800 px-3 py-1.5 font-mono text-sm text-slate-200">
-            frame <span className="text-brand-400">{currentFrame}</span>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const n = parseInt(frameInput, 10);
-              if (Number.isFinite(n)) seekFrame(fc > 0 ? Math.max(0, Math.min(n, fc - 1)) : Math.max(0, n));
-              setFrameInput("");
-            }}
-            className="flex items-center gap-1"
-          >
-            <input
-              type="number"
-              min={0}
-              max={fc || undefined}
-              value={frameInput}
-              onChange={(e) => setFrameInput(e.target.value)}
-              placeholder="go to frame #"
-              className="input w-28 font-mono text-sm"
-            />
-            <button type="submit" className="btn-ghost text-xs" disabled={frameInput === ""}>
-              Go
+          <div className="flex h-9 items-stretch divide-x divide-ink-900/10 overflow-hidden rounded-lg border border-ink-900/10">
+            <button
+              onMouseDown={keepFocus}
+              onClick={togglePlay}
+              title="Play / pause (Space)"
+              className="w-12 text-sm text-ink-800 transition-colors duration-150 hover:bg-ink-900/5"
+            >
+              {playing ? "❚❚" : "▶"}
             </button>
-          </form>
+            {[-10, -1, 1, 10].map((d) => {
+              const big = Math.abs(d) === 10;
+              return (
+                <button
+                  key={d}
+                  onMouseDown={keepFocus}
+                  onClick={() => seekFrame(currentFrame + d)}
+                  title={`${d > 0 ? "Forward" : "Back"} ${Math.abs(d)} frame${big ? "s" : ""} (${big ? "Shift+" : ""}${d > 0 ? "→" : "←"})`}
+                  className="px-2.5 text-sm text-ink-800 transition-colors duration-150 hover:bg-ink-900/5"
+                >
+                  {d < 0 ? (big ? "‹‹" : "‹") : big ? "››" : "›"}
+                  {big && <sup className="ml-0.5 text-[9px] text-ink-400">10</sup>}
+                </button>
+              );
+            })}
+          </div>
+          <FrameReadout currentFrame={currentFrame} frameCount={fc} onSeek={seekFrame} />
           <div className="ml-auto flex gap-1">
             {[0.25, 0.5, 1, 1.5, 2].map((r) => (
               <button
                 key={r}
                 onMouseDown={keepFocus}
                 onClick={() => changeRate(r)}
-                className={`rounded px-2 py-1 text-xs ${
-                  rate === r ? "bg-brand-600 text-white" : "bg-ink-800 text-slate-300"
+                className={`rounded-lg border px-2 py-1 text-xs transition-colors duration-150 ${
+                  rate === r
+                    ? "border-accent-blue/60 bg-accent-blue/5 text-ink-900"
+                    : "border-transparent text-ink-600 hover:bg-ink-900/5"
                 }`}
               >
                 {r}×
@@ -614,7 +825,7 @@ export default function KoshaWorkspace(props: Props) {
 
         {/* annotation window pager (viewport only — session stays continuous) */}
         {windowed && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-ink-700 bg-ink-900 px-3 py-2 text-xs">
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-ink-900/10 bg-paper-50 px-3 py-2 text-xs">
             <button
               className="btn-ghost px-2 py-1"
               onClick={() => gotoWindow(currentWindow - 1)}
@@ -622,10 +833,10 @@ export default function KoshaWorkspace(props: Props) {
             >
               ◀ prev {windowSec}s
             </button>
-            <span className="font-mono text-slate-300">
+            <span className="font-mono tabular-nums text-ink-700">
               Window {currentWindow + 1}/{windowCount} ·{" "}
-              <span className="text-brand-400">{tc(windowStart)}–{tc(windowEnd)}</span>{" "}
-              <span className="text-slate-500">(f {windowStart}–{windowEnd})</span>
+              <span className="text-accent-blue">{tc(windowStart)}–{tc(windowEnd)}</span>{" "}
+              <span className="text-ink-500">(f {windowStart}–{windowEnd})</span>
             </span>
             <button
               className="btn-ghost px-2 py-1"
@@ -658,210 +869,330 @@ export default function KoshaWorkspace(props: Props) {
           </div>
         )}
 
-        {/* timeline */}
-        <div className="mt-3">
-          <div
-            className="relative h-12 cursor-pointer rounded-md border border-ink-700 bg-ink-900"
-            onClick={onTimelineClick}
-          >
-            {windowed && (
-              <div
-                className="pointer-events-none absolute top-0 bottom-0 border-x border-white/25 bg-white/5"
-                style={{
-                  left: `${pct(windowStart)}%`,
-                  width: `${Math.max(pct(windowEnd) - pct(windowStart), 0.3)}%`,
-                }}
-                title={`current window ${tc(windowStart)}–${tc(windowEnd)}`}
-              />
-            )}
-            {tasks.map((t) => (
-              <div
-                key={t.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedTaskId(t.id);
-                  seekFrame(t.startFrame);
-                }}
-                title={`${t.label || "task"} · ${t.startFrame}–${t.endFrame}`}
-                className={`absolute top-1 bottom-1 rounded-sm border ${
-                  selectedTaskId === t.id ? "border-white bg-brand-600/70" : "border-black/40 bg-brand-600/40"
-                }`}
-                style={{ left: `${pct(t.startFrame)}%`, width: `${Math.max(pct(t.endFrame) - pct(t.startFrame), 0.5)}%` }}
-              />
-            ))}
-            {pendingIn != null && (
-              <div className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-emerald-400" style={{ left: `${pct(pendingIn)}%` }} />
-            )}
-            {pendingOut != null && (
-              <div className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-emerald-600" style={{ left: `${pct(pendingOut)}%` }} />
-            )}
-            <div className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-red-500" style={{ left: `${pct(currentFrame)}%` }} />
-          </div>
-          <div className="mt-1 flex justify-between text-[10px] text-slate-600">
-            <span>0</span>
-            <span>
-              In {pendingIn ?? "–"} · Out {pendingOut ?? "–"} (keys I / O)
-            </span>
-            <span>{fc}</span>
-          </div>
-        </div>
+        {/* streamed multi-lane timeline: every task/sub-task always visible */}
+        <TimelineBoard
+          tasks={tasks}
+          frameCount={fc}
+          fps={fps}
+          currentFrame={currentFrame}
+          editable={editable}
+          selectedTaskId={selectedTaskId}
+          selectedSubId={selectedSubId}
+          pendingIn={pendingIn}
+          pendingOut={pendingOut}
+          windowRange={windowed ? [windowStart, windowEnd] : null}
+          onSeek={seekFrame}
+          onSelectTask={selectTaskFromBoard}
+          onSelectSub={selectSubFromBoard}
+          onCommitDrag={commitDrag}
+        />
 
-        <p className="mt-2 text-xs text-slate-500">
-          <b>Space</b> play/pause · <b>←/→</b> step 1f (Shift 10f) · <b>I/O</b> mark
-          in/out · <b>Esc</b> clear
+        <p className="mt-2 text-xs text-ink-500">
+          <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">Space</kbd> play/pause ·{" "}
+          <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">←/→</kbd> step 1f (Shift 10f) ·{" "}
+          <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">I/O</kbd> mark in/out{" "}
+          <span className="text-ink-400">(In {pendingIn ?? "–"} · Out {pendingOut ?? "–"})</span> ·{" "}
+          <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">[/]</kbd> grow selected start/end 1f
+          <span className="text-ink-400"> (Shift 10f, Alt trims)</span> ·{" "}
+          <kbd className="rounded border border-ink-900/15 bg-ink-900/[0.04] px-1 text-[11px] text-ink-600">Esc</kbd> clear
         </p>
       </div>
 
-      {/* Right: tabbed panels */}
-      <aside className="space-y-3">
-        <div className="flex gap-1 rounded-md border border-ink-700 bg-ink-900 p-1 text-sm">
-          {(["tasks", "subtasks", "quality"] as Tab[]).map((tk) => (
-            <button
-              key={tk}
-              onClick={() => setTab(tk)}
-              className={`flex-1 rounded px-2 py-1.5 capitalize ${
-                tab === tk ? "bg-brand-600 text-white" : "text-slate-300 hover:bg-ink-800"
-              }`}
-            >
-              {tk === "subtasks" ? "Sub-tasks" : tk === "quality" ? "Quality" : "Tasks"}
-            </button>
-          ))}
+      {/* Right: annotations outline + quality, in one card */}
+      <aside className="space-y-4">
+        <div className="card">
+          <div className="flex gap-5 border-b border-ink-900/10 px-4">
+            {(["annotations", "quality"] as Tab[]).map((tk) => (
+              <button
+                key={tk}
+                onClick={() => setTab(tk)}
+                className={`-mb-px border-b-2 py-2.5 text-sm transition-colors duration-150 ${
+                  tab === tk
+                    ? "border-ink-900 text-ink-900"
+                    : "border-transparent text-ink-500 hover:text-ink-800"
+                }`}
+              >
+                {tk === "annotations" ? "Annotations" : "Quality"}
+              </button>
+            ))}
+          </div>
+          <div className="p-4">
+            {tab === "annotations" ? (
+              <AnnotationsPanel
+                tasks={tasks}
+                selectedTaskId={selectedTaskId}
+                selectedSubId={selectedSubId}
+                currentFrame={currentFrame}
+                fps={fps}
+                editable={editable}
+                view={panelView}
+                onOpenEditor={() => setPanelView("editor")}
+                onBackToList={() => setPanelView("list")}
+                taxonomies={props.taxonomies}
+                onSelectTask={selectTaskInPanel}
+                onSelectSub={selectSubInPanel}
+                onCreateTask={createTask}
+                onUpdateTask={updateTask}
+                onDeleteTask={deleteTask}
+                onCreateSub={createSub}
+                onUpdateSub={updateSub}
+                onDeleteSub={deleteSub}
+                onSeek={seekFrame}
+              />
+            ) : (
+              <QualityPanel
+                frameCount={frameCount}
+                sampleEveryN={props.sampleEveryN}
+                quality={quality}
+                editable={editable}
+                onUpsert={upsertQuality}
+                onSeek={seekFrame}
+                currentFrame={currentFrame}
+              />
+            )}
+          </div>
         </div>
 
-        <div className="card p-3">
-          {tab === "tasks" && (
-            <TasksPanel
-              tasks={tasks}
-              selectedId={selectedTaskId}
-              currentFrame={currentFrame}
-              fps={fps}
-              editable={editable}
-              taxonomies={props.taxonomies}
-              onSelect={setSelectedTaskId}
-              onCreate={createTask}
-              onUpdate={updateTask}
-              onDelete={deleteTask}
-              onSeek={seekFrame}
-            />
-          )}
-          {tab === "subtasks" && (
-            <SubTasksPanel
-              task={selectedTask}
-              currentFrame={currentFrame}
-              fps={fps}
-              editable={editable}
-              onCreate={createSub}
-              onUpdate={updateSub}
-              onDelete={deleteSub}
-              onSeek={seekFrame}
-              selectedSubId={selectedSubId}
-              onSelectSub={setSelectedSubId}
-            />
-          )}
-          {tab === "quality" && (
-            <QualityPanel
-              frameCount={frameCount}
-              sampleEveryN={props.sampleEveryN}
-              quality={quality}
-              editable={editable}
-              onUpsert={upsertQuality}
-              onSeek={seekFrame}
-              currentFrame={currentFrame}
-            />
-          )}
-        </div>
-
-        {/* status / actions */}
-        <div className="card p-3">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Status</span>
-            <span className="text-slate-200">{status}</span>
-            <a
-              href={`/api/assignments/${assignmentId}/export`}
-              className="text-xs text-brand-400 hover:underline"
-            >
-              Export JSON
-            </a>
+        {/* status / checklist / actions */}
+        <div className="card p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-500">
+              Status
+            </span>
+            <div className="flex items-center gap-3">
+              <StatusBadge status={status} />
+              <a href={`/api/assignments/${assignmentId}/export`} className="link text-xs">
+                Export JSON
+              </a>
+            </div>
           </div>
 
           {/* Reviewer feedback — the annotator sees this after a reject. */}
           {reviewNote.trim() && !canReview && (
-            <div
-              className={`mb-2 rounded-md border p-2 text-xs ${
-                status === "REJECTED"
-                  ? "border-red-800/60 bg-red-950/30 text-red-200"
-                  : "border-ink-700 bg-ink-950/60 text-slate-300"
-              }`}
-            >
-              <div className="font-medium">Reviewer note</div>
-              <div className="mt-0.5 whitespace-pre-wrap">{reviewNote}</div>
-            </div>
-          )}
-          {editable && (validation.errors.length > 0 || validation.warnings.length > 0) && (
-            <div className="mb-2 space-y-1 rounded-md border border-ink-700 bg-ink-950/60 p-2 text-[11px]">
-              <div className="font-medium text-slate-300">
-                QA checklist ({validation.errors.length} blocking ·{" "}
-                {validation.warnings.length} to review)
+            <div className="mt-4 border-t border-ink-900/10 pt-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-500">
+                Reviewer note
               </div>
-              {validation.errors.slice(0, 5).map((e, i) => (
-                <div key={`e${i}`} className="text-red-400">✗ {e.message}</div>
-              ))}
-              {validation.warnings.slice(0, 5).map((w, i) => (
-                <div key={`w${i}`} className="text-amber-400">• {w.message}</div>
-              ))}
+              <p
+                className={`mt-1 whitespace-pre-wrap text-sm leading-snug ${
+                  status === "REJECTED" ? "text-accent-red" : "text-ink-700"
+                }`}
+              >
+                {reviewNote}
+              </p>
             </div>
           )}
-          <div className="space-y-2">
-            {editable && (
+
+          {editable && (validation.errors.length > 0 || validation.warnings.length > 0) && (
+            <div className="mt-4 border-t border-ink-900/10 pt-3">
+              <button
+                onClick={() => setChecklistOpen((o) => !o)}
+                title={checklistOpen ? "Hide checklist items" : "Show checklist items"}
+                className="flex w-full items-baseline justify-between text-left"
+              >
+                <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-500">
+                  <span
+                    className={`mr-1 inline-block text-[10px] transition-transform duration-150 ${
+                      checklistOpen ? "rotate-90" : ""
+                    }`}
+                  >
+                    ›
+                  </span>
+                  Checklist
+                </span>
+                <span className="text-xs tabular-nums text-ink-500">
+                  {validation.errors.length > 0 && (
+                    <span className="text-accent-red">{validation.errors.length} blocking</span>
+                  )}
+                  {validation.errors.length > 0 && validation.warnings.length > 0 && " · "}
+                  {validation.warnings.length > 0 && `${validation.warnings.length} to review`}
+                </span>
+              </button>
+              {checklistOpen && (
+                <ul className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {validation.errors.map((it, i) => (
+                    <ChecklistLine key={`e${i}`} kind="error" text={it.message} />
+                  ))}
+                  {validation.warnings.map((it, i) => (
+                    <ChecklistLine key={`w${i}`} kind="warn" text={it.message} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {editable && (
+            <div className="mt-4 border-t border-ink-900/10 pt-3">
+              {blocked && (
+                <p className="mb-2 text-xs tabular-nums">
+                  <span className="text-accent-red">
+                    {validation.errors.length} blocking issue
+                    {validation.errors.length === 1 ? "" : "s"}
+                  </span>
+                  {validation.warnings.length > 0 && (
+                    <span className="text-ink-500"> · {validation.warnings.length} to review</span>
+                  )}
+                </p>
+              )}
               <button
                 onClick={() => transition("submit")}
                 disabled={saving || status === "SUBMITTED" || blocked}
-                title={blocked ? "Resolve blocking QA issues first" : undefined}
+                title={blocked ? "Resolve the blocking issues first" : undefined}
                 className="btn-primary w-full"
               >
-                {status === "SUBMITTED"
-                  ? "Submitted"
-                  : blocked
-                    ? `Fix ${validation.errors.length} issue(s) to submit`
-                    : "Submit for review"}
+                {status === "SUBMITTED" ? "Submitted" : "Submit for review"}
               </button>
-            )}
-            {canReview && (
-              <div className="space-y-2">
-                <textarea
-                  className="input min-h-[54px] text-xs"
-                  placeholder="Review note (required to reject — tell the annotator what to fix)"
-                  value={reviewNote}
-                  onChange={(e) => setReviewNote(e.target.value)}
-                />
-                <div className="flex gap-2">
-                  <button onClick={() => transition("approve")} disabled={saving} className="btn-ghost flex-1 border-green-800/60 text-green-300">
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => transition("reject")}
-                    disabled={saving || !reviewNote.trim()}
-                    title={!reviewNote.trim() ? "Add a note to reject" : undefined}
-                    className="btn-danger flex-1"
-                  >
-                    Reject
-                  </button>
-                </div>
+            </div>
+          )}
+
+          {canReview && (
+            <div className="mt-4 space-y-2 border-t border-ink-900/10 pt-3">
+              <textarea
+                className="input min-h-[54px] resize-y text-xs"
+                placeholder="Review note — required to reject; tell the annotator what to fix"
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => transition("approve")}
+                  disabled={saving}
+                  className="btn-ghost flex-1 border-accent-green/30 text-accent-green hover:border-accent-green/50 hover:bg-accent-green/5"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => transition("reject")}
+                  disabled={saving || !reviewNote.trim()}
+                  title={!reviewNote.trim() ? "Add a note to reject" : undefined}
+                  className="btn-danger flex-1"
+                >
+                  Reject
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
-        <div className="text-right text-xs text-slate-500">
+        <div className="text-right text-xs text-ink-400">
           {saving ? "Saving…" : "All changes saved"}
         </div>
       </aside>
+      </div>
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-md bg-ink-700 px-4 py-2 text-sm text-white shadow-lg">
+        <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-lg border border-ink-900/15 bg-surface px-4 py-2 text-sm text-ink-900 shadow-lg">
           {toast}
         </div>
       )}
     </div>
+  );
+}
+
+// Current-frame readout that IS the "go to frame" editor: click to type a
+// frame number, Enter seeks, Esc cancels, blur commits.
+function FrameReadout({
+  currentFrame,
+  frameCount,
+  onSeek,
+}: {
+  currentFrame: number;
+  frameCount: number; // 0 while unknown
+  onSeek: (frame: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const done = useRef(false); // guards blur-after-Enter/Esc double handling
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    const n = parseInt(val, 10);
+    if (Number.isFinite(n)) {
+      onSeek(frameCount > 0 ? Math.max(0, Math.min(n, frameCount - 1)) : Math.max(0, n));
+    }
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="numeric"
+        value={val}
+        onChange={(e) => setVal(e.target.value.replace(/[^\d]/g, ""))}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            done.current = true;
+            commit();
+          } else if (e.key === "Escape") {
+            done.current = true;
+            setEditing(false);
+          }
+        }}
+        onBlur={() => {
+          if (!done.current) commit();
+        }}
+        className="w-24 border-b border-accent-blue/60 bg-transparent font-mono text-sm tabular-nums text-ink-900 outline-none"
+        aria-label="Go to frame"
+      />
+    );
+  }
+  return (
+    <button
+      onClick={() => {
+        done.current = false;
+        setVal(String(currentFrame));
+        setEditing(true);
+      }}
+      title="Current frame — click to type a frame number (Enter seeks, Esc cancels)"
+      className="font-mono text-sm tabular-nums text-ink-800 transition-colors duration-150 hover:text-ink-900"
+    >
+      frame <span className="text-accent-blue">{currentFrame}</span>
+      {frameCount > 0 && <span className="text-ink-400"> / {frameCount}</span>}
+    </button>
+  );
+}
+
+// One QA checklist line: glyph column + human sentence, with frame ranges and
+// measures (12–340, 4.5s, 20f, 120/300f) set in mono tabular figures.
+function ChecklistLine({ kind, text }: { kind: "error" | "warn"; text: string }) {
+  return (
+    <li className="flex gap-2 text-sm leading-snug text-ink-700">
+      <span
+        className={`w-3 shrink-0 text-center ${
+          kind === "error" ? "text-accent-red" : "text-accent-yellow"
+        }`}
+      >
+        {kind === "error" ? "×" : "•"}
+      </span>
+      <span className="min-w-0">
+        <ChecklistText text={text} />
+      </span>
+    </li>
+  );
+}
+
+function ChecklistText({ text }: { text: string }) {
+  const parts = text.split(/(\d+\/\d+f?|\d+–\d+|\d+(?:\.\d+)?s\b|\d+f\b)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <span key={i} className="font-mono text-xs tabular-nums">
+            {p}
+          </span>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
   );
 }
