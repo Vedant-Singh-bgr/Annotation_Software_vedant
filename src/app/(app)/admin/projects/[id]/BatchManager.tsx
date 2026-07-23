@@ -185,6 +185,29 @@ function BatchCard({
     "none" | "r2" | "r2sessions" | "manual" | "session"
   >("none");
 
+  // Bulk selection over this batch's clips. Kept here rather than in ClipRow so
+  // one toolbar can act on the whole selection.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Only clips that can actually be transcoded are worth selecting for it: a
+  // session with segments, or a flat clip with an R2 object behind it.
+  const selectableIds = batch.clips
+    .filter((c) => c.sessionId || c.r2Key)
+    .map((c) => c.id);
+  const selectedClips = batch.clips.filter((c) => selected.has(c.id));
+  const selectedAssignmentIds = selectedClips.flatMap((c) => c.assignments.map((a) => a.id));
+
   async function deleteClip(id: string) {
     if (!confirm("Remove this clip and its assignments?")) return;
     try {
@@ -192,6 +215,73 @@ function BatchCard({
       onChange();
     } catch (e) {
       alert((e as Error).message);
+    }
+  }
+
+  async function bulkTranscode() {
+    setBulkBusy("transcode");
+    setBulkMsg(null);
+    try {
+      const res = await api("/api/admin/clips/bulk-transcode", "POST", {
+        clipIds: [...selected],
+      });
+      // Name the first couple of skip reasons — "3 skipped" alone doesn't tell
+      // you whether they were already running or had nothing to transcode.
+      const reasons = [
+        ...new Set(
+          (res.results as { ok: boolean; error?: string }[])
+            .filter((r) => !r.ok && r.error)
+            .map((r) => r.error as string),
+        ),
+      ].slice(0, 2);
+      setBulkMsg(
+        `${res.queued} queued` +
+          (res.skipped ? ` · ${res.skipped} skipped${reasons.length ? `: ${reasons.join("; ")}` : ""}` : ""),
+      );
+      setSelected(new Set());
+      onChange();
+    } catch (e) {
+      setBulkMsg((e as Error).message);
+    } finally {
+      setBulkBusy(null);
+    }
+  }
+
+  async function bulkDeleteAssignments() {
+    setBulkBusy("assignments");
+    setBulkMsg(null);
+    try {
+      // Ask the server how much work is at stake first, so the confirmation
+      // quotes real task counts instead of a vague warning.
+      const info = await api("/api/admin/assignments", "POST", {
+        assignmentIds: selectedAssignmentIds,
+      });
+      const ok = confirm(
+        `Delete ${info.assignments.length} assignment(s) across ${selectedClips.length} clip(s)?\n\n` +
+          `This permanently deletes ${info.taskTotal} annotation task(s) and their sub-tasks and frame quality rows. It cannot be undone.\n\n` +
+          info.assignments
+            .slice(0, 8)
+            .map(
+              (a: { annotator: string; status: string; taskCount: number }) =>
+                `  • ${a.annotator} — ${a.status.toLowerCase().replace(/_/g, " ")} · ${a.taskCount} task(s)`,
+            )
+            .join("\n") +
+          (info.assignments.length > 8 ? `\n  … and ${info.assignments.length - 8} more` : ""),
+      );
+      if (!ok) {
+        setBulkBusy(null);
+        return;
+      }
+      const res = await api("/api/admin/assignments", "DELETE", {
+        assignmentIds: selectedAssignmentIds,
+      });
+      setBulkMsg(`${res.deleted} assignment(s) deleted`);
+      setSelected(new Set());
+      onChange();
+    } catch (e) {
+      setBulkMsg((e as Error).message);
+    } finally {
+      setBulkBusy(null);
     }
   }
 
@@ -280,9 +370,65 @@ function BatchCard({
       )}
 
       <div className="mt-3 border-t border-ink-900/10 pt-3">
-        <div className="mb-2 text-xs font-medium text-ink-500">
-          Clips ({batch.clips.length})
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <div className="text-xs font-medium text-ink-500">
+            Clips ({batch.clips.length})
+          </div>
+          {batch.clips.length > 0 && (
+            <button
+              onClick={() =>
+                setSelected((prev) =>
+                  prev.size === selectableIds.length ? new Set() : new Set(selectableIds),
+                )
+              }
+              className="text-[11px] text-ink-400 transition-colors duration-150 hover:text-ink-800"
+            >
+              {selected.size === selectableIds.length && selectableIds.length > 0
+                ? "Clear selection"
+                : `Select all (${selectableIds.length})`}
+            </button>
+          )}
         </div>
+
+        {selected.size > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-accent-blue/25 bg-accent-blue/5 px-3 py-2">
+            <span className="text-xs text-ink-700">{selected.size} selected</span>
+            <button
+              onClick={bulkTranscode}
+              disabled={bulkBusy !== null || !r2Configured}
+              title={
+                r2Configured
+                  ? "Queue the proxy transcode for every selected clip"
+                  : "R2 not configured"
+              }
+              className="rounded-lg border border-accent-blue/40 bg-accent-blue/5 px-2.5 py-1 text-xs text-accent-blue transition-colors duration-150 hover:bg-accent-blue/10 disabled:opacity-40"
+            >
+              {bulkBusy === "transcode" ? "Queuing…" : `▶ Queue transcode (${selected.size})`}
+            </button>
+            <button
+              onClick={bulkDeleteAssignments}
+              disabled={bulkBusy !== null || selectedAssignmentIds.length === 0}
+              title={
+                selectedAssignmentIds.length === 0
+                  ? "No assignments on the selected clips"
+                  : "Delete every assignment on the selected clips — destroys their annotations"
+              }
+              className="rounded-lg border border-accent-red/40 px-2.5 py-1 text-xs text-accent-red transition-colors duration-150 hover:bg-accent-red/10 disabled:opacity-40"
+            >
+              {bulkBusy === "assignments"
+                ? "Deleting…"
+                : `Delete assignments (${selectedAssignmentIds.length})`}
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-[11px] text-ink-400 transition-colors duration-150 hover:text-ink-800"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+        {bulkMsg && <p className="mb-2 text-xs text-ink-500">{bulkMsg}</p>}
+
         {batch.clips.length === 0 ? (
           <p className="text-xs text-ink-400">No clips yet.</p>
         ) : (
@@ -292,6 +438,9 @@ function BatchCard({
                 key={c.id}
                 clip={c}
                 r2Configured={r2Configured}
+                selected={selected.has(c.id)}
+                selectable={Boolean(c.sessionId || c.r2Key)}
+                onToggleSelected={() => toggleSelected(c.id)}
                 onDelete={() => deleteClip(c.id)}
                 onChange={onChange}
               />
@@ -385,11 +534,17 @@ function PublishBatchControl({
 function ClipRow({
   clip: c,
   r2Configured,
+  selected,
+  selectable,
+  onToggleSelected,
   onDelete,
   onChange,
 }: {
   clip: Clip;
   r2Configured: boolean;
+  selected: boolean;
+  selectable: boolean;
+  onToggleSelected: () => void;
   onDelete: () => void;
   onChange: () => void;
 }) {
@@ -431,9 +586,40 @@ function ClipRow({
 
   const mmss = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
+  async function onDeleteAssignment(a: { id: string; annotator: string; status: string }) {
+    // Look up the real task count first — "are you sure" is worthless when the
+    // answer depends on whether this annotator has done 0 tasks or 40.
+    let detail = "";
+    try {
+      const info = await api("/api/admin/assignments", "POST", { assignmentIds: [a.id] });
+      detail = `\n\nThis permanently deletes ${info.taskTotal} annotation task(s) and their sub-tasks. It cannot be undone.`;
+    } catch {
+      detail = "\n\nThis also deletes their annotations on this clip. It cannot be undone.";
+    }
+    if (!confirm(`Delete ${a.annotator}'s assignment on “${c.title}”?${detail}`)) return;
+    try {
+      await api("/api/admin/assignments", "DELETE", { assignmentIds: [a.id] });
+      onChange();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
-    <li className="text-sm text-ink-700">
+    <li className={`text-sm text-ink-700 ${selected ? "rounded bg-accent-blue/5" : ""}`}>
       <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          disabled={!selectable}
+          onChange={onToggleSelected}
+          title={
+            selectable
+              ? "Select for bulk actions"
+              : "Nothing to transcode on this clip (no session segments, no R2 object)"
+          }
+          className="h-3.5 w-3.5 shrink-0 accent-accent-blue disabled:opacity-25"
+        />
         <span className="text-ink-400">{isSession ? "🎬" : "▶"}</span>
         <span className="truncate">{c.title}</span>
         {isSession && (
@@ -481,23 +667,36 @@ function ClipRow({
         <div className="mt-1 flex flex-wrap items-center gap-1 pl-6 text-[11px]">
           <span className="text-ink-300">review:</span>
           {c.assignments.map((a) => (
-            <Link
+            <span
               key={a.id}
-              href={`/annotate/${a.id}`}
-              title={
-                a.status === "SUBMITTED"
-                  ? "Open to review (approve / reject)"
-                  : "Open annotation"
-              }
-              className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 transition-colors duration-150 hover:border-accent-blue/60 ${
+              className={`flex items-center rounded-full border transition-colors duration-150 hover:border-accent-blue/60 ${
                 a.status === "SUBMITTED"
                   ? "border-accent-yellow/30 bg-accent-yellow/10 text-accent-yellow"
-                  : "border-ink-900/10 bg-ink-900/[0.03] text-ink-700 hover:text-ink-900"
+                  : "border-ink-900/10 bg-ink-900/[0.03] text-ink-700"
               }`}
             >
-              {a.annotator} · {a.status.toLowerCase().replace("_", " ")}
-              {a.status === "SUBMITTED" && " →"}
-            </Link>
+              <Link
+                href={`/annotate/${a.id}`}
+                title={
+                  a.status === "SUBMITTED"
+                    ? "Open to review (approve / reject)"
+                    : "Open annotation"
+                }
+                className="py-0.5 pl-1.5 hover:text-ink-900"
+              >
+                {a.annotator} · {a.status.toLowerCase().replace("_", " ")}
+                {a.status === "SUBMITTED" && " →"}
+              </Link>
+              {/* Single-assignment removal, so pulling one annotator off a clip
+                  doesn't mean selecting the clip and wiping everyone's work. */}
+              <button
+                onClick={() => onDeleteAssignment(a)}
+                title={`Delete ${a.annotator}'s assignment and their annotations on this clip`}
+                className="px-1.5 py-0.5 text-ink-300 transition-colors duration-150 hover:text-accent-red"
+              >
+                ×
+              </button>
+            </span>
           ))}
         </div>
       )}
