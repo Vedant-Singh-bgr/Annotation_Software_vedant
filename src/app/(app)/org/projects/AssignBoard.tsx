@@ -10,6 +10,7 @@ type Assignment = {
   id: string;
   status: string;
   annotator: { id: string; name: string };
+  reviewer: { id: string; name: string } | null;
 };
 type Clip = { id: string; title: string; assignments: Assignment[] };
 type Batch = { id: string; name: string; clips: Clip[] };
@@ -18,14 +19,39 @@ type Project = { id: string; name: string; batches: Batch[] };
 export default function AssignBoard({
   projects,
   annotators,
+  reviewers,
 }: {
   projects: Project[];
   annotators: Annotator[];
+  reviewers: Annotator[];
 }) {
   const router = useRouter();
   const [busyClip, setBusyClip] = useState<string | null>(null);
   const [pick, setPick] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
+  const [busyAssignment, setBusyAssignment] = useState<string | null>(null);
+
+  // Route (or clear) the QC reviewer on an existing assignment. Kept separate
+  // from assigning an annotator because an org admin usually decides who
+  // reviews after the work exists, once they can see who is free.
+  async function route(assignmentId: string, reviewerId: string) {
+    setBusyAssignment(assignmentId);
+    setErr(null);
+    try {
+      const res = await fetch("/api/org/assignments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignmentId, reviewerId: reviewerId || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      router.refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusyAssignment(null);
+    }
+  }
 
   async function assign(clipId: string) {
     const annotatorId = pick[clipId] || annotators[0]?.id;
@@ -103,26 +129,47 @@ export default function AssignBoard({
                                 </span>
                               ) : (
                                 c.assignments.map((a) => (
-                                  <Link
-                                    key={a.id}
-                                    href={`/annotate/${a.id}`}
-                                    title={
-                                      a.status === "SUBMITTED"
-                                        ? "Open to review (approve / reject)"
-                                        : "Open annotation"
-                                    }
-                                    className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-ink-700 transition-colors duration-150 hover:border-accent-blue/60 hover:text-ink-900 ${
-                                      a.status === "SUBMITTED"
-                                        ? "border-accent-yellow/30 bg-accent-yellow/10"
-                                        : "border-transparent bg-ink-900/5"
-                                    }`}
-                                  >
-                                    {a.annotator.name}
-                                    <StatusBadge status={a.status} />
-                                    {a.status === "SUBMITTED" && (
-                                      <span className="text-accent-yellow">· Review →</span>
+                                  <span key={a.id} className="flex items-center gap-1">
+                                    <Link
+                                      href={`/annotate/${a.id}`}
+                                      title={
+                                        a.status === "SUBMITTED"
+                                          ? "Open to review (approve / reject)"
+                                          : "Open annotation"
+                                      }
+                                      className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-ink-700 transition-colors duration-150 hover:border-accent-blue/60 hover:text-ink-900 ${
+                                        a.status === "SUBMITTED"
+                                          ? "border-accent-yellow/30 bg-accent-yellow/10"
+                                          : "border-transparent bg-ink-900/5"
+                                      }`}
+                                    >
+                                      {a.annotator.name}
+                                      <StatusBadge status={a.status} />
+                                      {a.status === "SUBMITTED" && (
+                                        <span className="text-accent-yellow">· Review →</span>
+                                      )}
+                                    </Link>
+                                    {/* Who reviews this one. Left blank the work
+                                        stays in the org admin's own queue. */}
+                                    {reviewers.length > 0 && (
+                                      <select
+                                        value={a.reviewer?.id ?? ""}
+                                        disabled={busyAssignment === a.id}
+                                        onChange={(e) => route(a.id, e.target.value)}
+                                        title="Route this submission to a QC reviewer"
+                                        className="rounded-lg border border-ink-900/15 bg-ink-900/[0.03] px-1.5 py-0.5 text-[11px] text-ink-600 transition-colors duration-150 focus:border-accent-blue/60 focus:outline-none disabled:opacity-50"
+                                      >
+                                        <option value="">QC: —</option>
+                                        {reviewers
+                                          .filter((r) => r.id !== a.annotator.id)
+                                          .map((r) => (
+                                            <option key={r.id} value={r.id}>
+                                              QC: {r.name}
+                                            </option>
+                                          ))}
+                                      </select>
                                     )}
-                                  </Link>
+                                  </span>
                                 ))
                               )}
                             </div>

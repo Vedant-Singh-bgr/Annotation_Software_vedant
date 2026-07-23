@@ -55,8 +55,16 @@ export default function NewMemberForm() {
         <label className="label">Role</label>
         <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="ANNOTATOR">Annotator</option>
+          <option value="QC">QC reviewer</option>
           <option value="ORG_ADMIN">Org admin</option>
         </select>
+        <p className="mt-1 text-[11px] text-ink-400">
+          {role === "QC"
+            ? "Reviews only the clips you route to them, and approves or rejects — they cannot edit annotations."
+            : role === "ORG_ADMIN"
+              ? "Full access to this organization: every project, clip and review."
+              : "Annotates the clips you assign to them."}
+        </p>
       </div>
       {msg && (
         <p className={`text-xs ${msg.ok ? "text-accent-green" : "text-accent-red"}`}>{msg.text}</p>

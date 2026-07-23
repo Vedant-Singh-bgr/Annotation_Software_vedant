@@ -8,7 +8,7 @@ export default async function OrgProjectsPage() {
   if (user.role !== "ORG_ADMIN") redirect("/dashboard");
   const orgId = user.organizationId!;
 
-  const [projects, annotators] = await Promise.all([
+  const [projects, annotators, reviewers] = await Promise.all([
     prisma.project.findMany({
       where: { organizationId: orgId },
       orderBy: { createdAt: "desc" },
@@ -20,7 +20,10 @@ export default async function OrgProjectsPage() {
               orderBy: { createdAt: "desc" },
               include: {
                 assignments: {
-                  include: { annotator: { select: { id: true, name: true } } },
+                  include: {
+                    annotator: { select: { id: true, name: true } },
+                    reviewer: { select: { id: true, name: true } },
+                  },
                 },
               },
             },
@@ -29,7 +32,14 @@ export default async function OrgProjectsPage() {
       },
     }),
     prisma.user.findMany({
-      where: { organizationId: orgId, role: "ANNOTATOR" },
+      where: { organizationId: orgId, role: "ANNOTATOR", active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    // QC people available to review. Deactivated users are excluded so an org
+    // admin can't route work to someone who cannot sign in.
+    prisma.user.findMany({
+      where: { organizationId: orgId, role: "QC", active: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -48,10 +58,11 @@ export default async function OrgProjectsPage() {
           id: a.id,
           status: a.status,
           annotator: a.annotator,
+          reviewer: a.reviewer,
         })),
       })),
     })),
   }));
 
-  return <AssignBoard projects={data} annotators={annotators} />;
+  return <AssignBoard projects={data} annotators={annotators} reviewers={reviewers} />;
 }

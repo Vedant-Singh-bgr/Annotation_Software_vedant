@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
-import type { Role } from "@/lib/constants";
+import { isRole, type Role } from "@/lib/constants";
 
 const COOKIE_NAME = "session";
 const MAX_AGE_SEC = 60 * 60 * 24 * 7; // 7 days
@@ -90,7 +90,16 @@ export async function getSession(): Promise<SessionUser | null> {
     const { active, organization, ...rest } = user;
     void active;
     void organization;
-    return { ...rest, role: user.role as Role };
+    // Fail closed on an unrecognised role. `role` is a plain String column with
+    // no DB enum or CHECK constraint, so a typo in a seed or a hand-edited row
+    // would otherwise flow through as a session whose role matches no branch —
+    // and several UI branches are written as "not an annotator", which such a
+    // value would satisfy. No session is strictly safer than an unknown one.
+    if (!isRole(user.role)) {
+      console.error(`[auth] user ${user.id} has unrecognised role ${JSON.stringify(user.role)}`);
+      return null;
+    }
+    return { ...rest, role: user.role };
   } catch {
     return null;
   }

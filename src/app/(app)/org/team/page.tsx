@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import NewMemberForm from "./NewMemberForm";
 import MemberActions from "./MemberActions";
+import { ROLE_LABELS, type Role } from "@/lib/constants";
 
 export default async function TeamPage() {
   const user = (await getSession())!;
@@ -11,7 +12,7 @@ export default async function TeamPage() {
   const members = await prisma.user.findMany({
     where: { organizationId: user.organizationId },
     orderBy: { createdAt: "asc" },
-    include: { _count: { select: { assignments: true } } },
+    include: { _count: { select: { assignments: true, reviewerAssignments: true } } },
   });
 
   return (
@@ -38,13 +39,20 @@ export default async function TeamPage() {
               </div>
               <div className="text-right">
                 <span className="badge border-ink-900/10 bg-ink-900/[0.03] text-ink-700">
-                  {m.role === "ORG_ADMIN" ? "Admin" : "Annotator"}
+                  {ROLE_LABELS[m.role as Role] ?? m.role}
                 </span>
                 <div className="mt-1 text-xs text-ink-400">
-                  {m._count.assignments} tasks
+                  {m.role === "QC"
+                    ? `${m._count.reviewerAssignments} to review`
+                    : `${m._count.assignments} tasks`}
                 </div>
               </div>
-              <MemberActions userId={m.id} active={m.active} isSelf={m.id === user.id} />
+              <MemberActions
+                userId={m.id}
+                active={m.active}
+                isSelf={m.id === user.id}
+                role={m.role}
+              />
             </div>
           ))}
         </div>

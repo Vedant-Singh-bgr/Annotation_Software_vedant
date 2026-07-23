@@ -36,6 +36,14 @@ export async function getAuthorizedAssignment(user: SessionUser, assignmentId: s
       if (assignment.annotatorId !== user.id)
         forbidden("This task is not assigned to you.");
       break;
+    case "QC":
+      // Both conditions, not either: the org check means a reviewerId that
+      // somehow points across an organisation boundary still fails closed.
+      if (orgId !== user.organizationId)
+        forbidden("This task belongs to another organization.");
+      if (assignment.reviewerId !== user.id)
+        forbidden("This task has not been routed to you for review.");
+      break;
     default:
       forbidden("Not authorized for this assignment.");
   }
@@ -47,6 +55,11 @@ export function canEditAnnotations(
   user: SessionUser,
   assignment: { annotatorId: string; status: string },
 ): boolean {
+  // Only the assigned annotator edits. This deliberately denies QC too: a QC
+  // reviewer approves or rejects with a note and sends work back, rather than
+  // correcting it — which keeps the annotator's name on the export honest.
+  // Don't "fix" this to let reviewers edit without also adding an audit trail
+  // of who changed what.
   if (user.role !== "ANNOTATOR") return false;
   if (assignment.annotatorId !== user.id) return false;
   return assignment.status !== "APPROVED"; // locked once approved

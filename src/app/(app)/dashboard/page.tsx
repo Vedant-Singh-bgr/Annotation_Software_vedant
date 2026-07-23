@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import StatusBadge from "@/components/StatusBadge";
@@ -6,10 +7,71 @@ import StatusBadge from "@/components/StatusBadge";
 export default async function DashboardPage() {
   const user = (await getSession())!; // layout guarantees auth
 
-  if (user.role === "ANNOTATOR") return <AnnotatorDashboard userId={user.id} />;
-  if (user.role === "ORG_ADMIN")
-    return <OrgAdminDashboard orgId={user.organizationId!} />;
-  return <PlatformDashboard />;
+  // Explicit switch: the old `return <PlatformDashboard />` fall-through meant
+  // any role that wasn't ANNOTATOR or ORG_ADMIN landed on platform-wide counts
+  // across every organisation — a cross-tenant leak for any new role.
+  switch (user.role) {
+    case "ANNOTATOR":
+      return <AnnotatorDashboard userId={user.id} />;
+    case "ORG_ADMIN":
+      return <OrgAdminDashboard orgId={user.organizationId!} />;
+    case "QC":
+      return <QcDashboard userId={user.id} />;
+    case "PLATFORM_ADMIN":
+      return <PlatformDashboard />;
+    default:
+      redirect("/login");
+  }
+}
+
+// A QC reviewer's landing page: only the assignments routed to them, submitted
+// work first because that is what needs a decision.
+async function QcDashboard({ userId }: { userId: string }) {
+  const assignments = await prisma.assignment.findMany({
+    where: { reviewerId: userId },
+    orderBy: [{ submittedAt: "desc" }, { updatedAt: "desc" }],
+    include: {
+      annotator: { select: { name: true } },
+      clip: { include: { batch: { include: { project: true } } } },
+      _count: { select: { tasks: true } },
+    },
+  });
+  const awaiting = assignments.filter((a) => a.status === "SUBMITTED");
+
+  return (
+    <div>
+      <h1 className="mb-1 font-serif text-2xl font-medium text-ink-900">My reviews</h1>
+      <p className="mb-6 text-sm text-ink-500">
+        {awaiting.length} awaiting your review · {assignments.length} routed to you
+      </p>
+
+      {assignments.length === 0 ? (
+        <EmptyState message="Nothing routed to you yet. Your org admin assigns clips for you to review." />
+      ) : (
+        <div className="grid gap-4">
+          {assignments.map((a) => (
+            <Link
+              key={a.id}
+              href={`/annotate/${a.id}`}
+              className="card flex items-center gap-4 p-5 transition-colors duration-150 hover:border-ink-900/20 hover:bg-ink-900/[0.03]"
+            >
+              <div className="grid h-10 w-16 place-items-center rounded-lg bg-paper-50 text-ink-400">
+                ▶
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-ink-900">{a.clip.title}</div>
+                <div className="text-xs text-ink-400">
+                  {a.clip.batch.project.name} · {a.clip.batch.name} · by {a.annotator.name} ·{" "}
+                  {a._count.tasks} task{a._count.tasks === 1 ? "" : "s"}
+                </div>
+              </div>
+              <StatusBadge status={a.status} />
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 async function AnnotatorDashboard({ userId }: { userId: string }) {

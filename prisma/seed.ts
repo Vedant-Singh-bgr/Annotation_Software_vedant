@@ -90,6 +90,21 @@ async function main() {
     },
   });
 
+  // Reviews only what the org admin routes to them — unlike the org admin, who
+  // sees the whole org. Seeded so the QC paths ship exercised rather than
+  // untested.
+  const qc = await prisma.user.upsert({
+    where: { email: "qc@labelco.dev" },
+    update: {},
+    create: {
+      email: "qc@labelco.dev",
+      name: "Quinn QC",
+      passwordHash: password,
+      role: "QC",
+      organizationId: org.id,
+    },
+  });
+
   // ── Approved lists (global placeholders) ──────────────────────────────────
   await prisma.taxonomyItem.deleteMany({ where: { projectId: null } });
   for (const [type, values] of Object.entries(TAXONOMY)) {
@@ -176,9 +191,17 @@ async function main() {
   await prisma.assignment.create({
     data: { clipId: clips[0].id, annotatorId: annotator1.id, status: "IN_PROGRESS" },
   });
+  // Routed to QC, so the reviewer's queue is non-empty on a fresh seed.
   await prisma.assignment.create({
-    data: { clipId: clips[1].id, annotatorId: annotator1.id, status: "ASSIGNED" },
+    data: {
+      clipId: clips[1].id,
+      annotatorId: annotator1.id,
+      status: "ASSIGNED",
+      reviewerId: qc.id,
+    },
   });
+  // Deliberately left unrouted: unrouted work stays reviewable by the org admin
+  // exactly as before, and the seed should show both paths.
   await prisma.assignment.create({
     data: { clipId: clips[2].id, annotatorId: annotator2.id, status: "ASSIGNED" },
   });
@@ -187,6 +210,7 @@ async function main() {
   console.log("Sign in:");
   console.log(`  • Platform admin : ${platformAdmin.email}`);
   console.log(`  • Org admin       : ${orgAdmin.email}`);
+  console.log(`  • QC reviewer     : ${qc.email}`);
   console.log(`  • Annotators      : ${annotator1.email}, ${annotator2.email}\n`);
 }
 

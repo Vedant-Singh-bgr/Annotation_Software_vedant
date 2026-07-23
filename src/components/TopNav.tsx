@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
+import { ROLE_LABELS, type Role } from "@/lib/constants";
 
 type Props = {
   name: string;
@@ -21,12 +22,9 @@ export default function TopNav({ name, role, orgName, links }: Props) {
     router.refresh();
   }
 
-  const roleLabel =
-    role === "PLATFORM_ADMIN"
-      ? "Platform admin"
-      : role === "ORG_ADMIN"
-        ? "Org admin"
-        : "Annotator";
+  // Table lookup, not a ternary chain whose else-branch says "Annotator" — that
+  // would have mislabelled a QC user as an annotator.
+  const roleLabel = ROLE_LABELS[role as Role] ?? role;
 
   return (
     <header className="sticky top-0 z-20 border-b border-ink-900/10 bg-surface/90 backdrop-blur">

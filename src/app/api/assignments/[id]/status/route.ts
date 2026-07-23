@@ -73,7 +73,22 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       }
       next = "SUBMITTED";
     } else if (action === "approve" || action === "reject") {
-      if (user.role === "ANNOTATOR") forbidden("Annotators cannot review.");
+      // Positive allowlist, not "anyone who isn't an annotator". QC's scoping to
+      // routed assignments is enforced by getAuthorizedAssignment above.
+      if (user.role !== "PLATFORM_ADMIN" && user.role !== "ORG_ADMIN" && user.role !== "QC")
+        forbidden("You are not allowed to review assignments.");
+      // Nobody reviews their own work. This matters most for an annotator who
+      // was later promoted to QC: without it they could approve — and therefore
+      // publish — their own historic assignments, with nothing recording it.
+      if (assignment.annotatorId === user.id)
+        forbidden("You cannot review your own annotations.");
+      // Review acts on submitted work. Previously unchecked, so approve was
+      // legal straight from ASSIGNED and an APPROVED (already published)
+      // assignment could be flipped back to REJECTED.
+      if (assignment.status !== "SUBMITTED")
+        badRequest(
+          `Only submitted work can be reviewed (this assignment is ${assignment.status.toLowerCase()}).`,
+        );
       next = action === "approve" ? "APPROVED" : "REJECTED";
     } else {
       badRequest("action must be submit | approve | reject.");
@@ -83,8 +98,15 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       where: { id },
       data: {
         status: next!,
-        reviewNote: action === "submit" ? assignment.reviewNote : reviewNote,
+        // Approve sends an empty note from the UI; blindly writing it wiped the
+        // rejection note that explained why the work came back. Keep the
+        // existing note unless the reviewer actually typed one.
+        reviewNote:
+          action === "submit" ? assignment.reviewNote : reviewNote || assignment.reviewNote,
         submittedAt: action === "submit" ? new Date() : assignment.submittedAt,
+        // Who decided, and when — nothing recorded this before.
+        reviewedById: action === "submit" ? assignment.reviewedById : user.id,
+        reviewedAt: action === "submit" ? assignment.reviewedAt : new Date(),
       },
     });
     // Approval is the delivery event: publish the export to R2 beside the clip's

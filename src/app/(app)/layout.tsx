@@ -18,18 +18,21 @@ export default async function AppLayout({
       })
     : null;
 
-  // Count of work awaiting review, for the "Review" nav badge (role-scoped).
-  const submittedCount =
-    user.role === "ANNOTATOR"
-      ? 0
-      : await prisma.assignment.count({
-          where: {
-            status: "SUBMITTED",
-            ...(user.role === "ORG_ADMIN"
-              ? { clip: { batch: { project: { organizationId: user.organizationId! } } } }
-              : {}),
-          },
-        });
+  // Count of work awaiting review, for the "Review" nav badge. Scoped by role
+  // with an explicit default — as a ternary chain the else-branch was
+  // platform-wide, so a QC user would have seen a count spanning every
+  // organisation.
+  const reviewScope: Record<string, unknown> | null =
+    user.role === "PLATFORM_ADMIN"
+      ? {}
+      : user.role === "ORG_ADMIN"
+        ? { clip: { batch: { project: { organizationId: user.organizationId! } } } }
+        : user.role === "QC"
+          ? { reviewerId: user.id }
+          : null; // ANNOTATOR and anything unrecognised: no review badge
+  const submittedCount = reviewScope
+    ? await prisma.assignment.count({ where: { status: "SUBMITTED", ...reviewScope } })
+    : 0;
 
   const links =
     user.role === "PLATFORM_ADMIN"
@@ -48,7 +51,12 @@ export default async function AppLayout({
             { href: "/review", label: "Review", badge: submittedCount },
             { href: "/org/team", label: "Team" },
           ]
-        : [{ href: "/dashboard", label: "My Tasks" }];
+        : user.role === "QC"
+          ? [
+              { href: "/dashboard", label: "Overview" },
+              { href: "/review", label: "Review", badge: submittedCount },
+            ]
+          : [{ href: "/dashboard", label: "My Tasks" }];
 
   return (
     <div className="min-h-screen">

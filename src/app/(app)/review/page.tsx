@@ -18,10 +18,24 @@ export default async function ReviewQueuePage({ searchParams }: Props) {
   const raw = (await searchParams).status?.toUpperCase();
   const status = (FILTERS as readonly string[]).includes(raw ?? "") ? raw! : "SUBMITTED";
 
-  const orgScope =
-    user.role === "ORG_ADMIN"
-      ? { clip: { batch: { project: { organizationId: user.organizationId! } } } }
-      : {};
+  // Explicit per-role scope with a default deny. As a ternary the else-branch
+  // was `{}` — platform-wide — which any future role would have inherited,
+  // leaking every organisation's annotator names and project names.
+  let orgScope: Record<string, unknown>;
+  switch (user.role) {
+    case "PLATFORM_ADMIN":
+      orgScope = {};
+      break;
+    case "ORG_ADMIN":
+      orgScope = { clip: { batch: { project: { organizationId: user.organizationId! } } } };
+      break;
+    case "QC":
+      // Only what has been routed to this reviewer.
+      orgScope = { reviewerId: user.id };
+      break;
+    default:
+      redirect("/dashboard");
+  }
   const where = {
     ...(status === "ALL" ? {} : { status }),
     ...orgScope,
@@ -42,6 +56,7 @@ export default async function ReviewQueuePage({ searchParams }: Props) {
     take: 200,
     include: {
       annotator: { select: { name: true } },
+      reviewer: { select: { name: true } },
       clip: {
         include: {
           batch: { include: { project: { select: { name: true, organizationId: true } } } },
@@ -98,6 +113,7 @@ export default async function ReviewQueuePage({ searchParams }: Props) {
                 <div className="truncate font-medium text-ink-900">{a.clip.title}</div>
                 <div className="truncate text-xs text-ink-400">
                   {a.clip.batch.project.name} · {a.clip.batch.name} · {a.annotator.name}
+                  {a.reviewer ? ` · QC: ${a.reviewer.name}` : ""}
                   {a.submittedAt
                     ? ` · submitted ${new Date(a.submittedAt).toLocaleDateString()}`
                     : ""}

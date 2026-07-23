@@ -51,6 +51,11 @@ model User {
   createdAt      DateTime      @default(now())
 
   assignments   Assignment[]   @relation("AnnotatorAssignments")
+  // Work routed to this user for QC review, and the audit trail of what they
+  // actually decided. Both sides must be named because User relates to
+  // Assignment three separate ways.
+  reviewerAssignments Assignment[] @relation("ReviewerAssignments")
+  reviewedAssignments Assignment[] @relation("ReviewedAssignments")
   tasks         Task[]
   subTasks      SubTask[]
   frameQuality  FrameQuality[]
@@ -173,6 +178,18 @@ model Assignment {
   annotator   User      @relation("AnnotatorAssignments", fields: [annotatorId], references: [id], onDelete: Cascade)
   status      String    @default("ASSIGNED")
   reviewNote  String    @default("")
+
+  // QC routing. Nullable on purpose: an unrouted assignment stays reviewable by
+  // the org admin exactly as before, so nothing regresses and no backfill is
+  // needed. onDelete MUST be SetNull, never the Cascade used for annotatorId —
+  // cascading a reviewer would delete the ANNOTATOR's whole task tree when a
+  // departed reviewer's user row is removed.
+  reviewerId   String?
+  reviewer     User?     @relation("ReviewerAssignments", fields: [reviewerId], references: [id], onDelete: SetNull)
+  // Who actually approved/rejected, and when. Previously nothing recorded this.
+  reviewedById String?
+  reviewedBy   User?     @relation("ReviewedAssignments", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   submittedAt DateTime?
@@ -199,6 +216,7 @@ model Assignment {
   @@unique([clipId, annotatorId])
   @@index([annotatorId])
   @@index([clipId])
+  @@index([reviewerId])
 }
 
 // L1 — Long-horizon task. Boundaries are frame indices (±30 frame target).

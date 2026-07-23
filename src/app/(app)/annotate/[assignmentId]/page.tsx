@@ -49,7 +49,12 @@ export default async function AnnotatePage({ params }: Props) {
       where:
         user.role === "ANNOTATOR"
           ? { annotatorId: user.id }
-          : { clip: { batchId: clip.batchId } },
+          : user.role === "QC"
+            ? // Only what is routed to this reviewer. The batch-wide branch
+              // below would have shown a QC user every other annotator's work
+              // in the batch, including assignments never routed to them.
+              { clip: { batchId: clip.batchId }, reviewerId: user.id }
+            : { clip: { batchId: clip.batchId } },
       orderBy: { createdAt: "asc" },
       include: { clip: { include: { batch: { include: { project: true } } } } },
     }),
@@ -100,7 +105,12 @@ export default async function AnnotatePage({ params }: Props) {
   ) as { VENUE_L2: string[]; VENUE_L3: string[]; JOB: string[] };
 
   const editable = canEditAnnotations(user, assignment);
-  const canReview = user.role !== "ANNOTATOR";
+  // Positive allowlist, mirroring the status route's approve/reject guard, and
+  // never for your own work — a promoted annotator must not be shown an approve
+  // button on assignments they authored.
+  const canReview =
+    (user.role === "PLATFORM_ADMIN" || user.role === "ORG_ADMIN" || user.role === "QC") &&
+    assignment.annotatorId !== user.id;
 
   return (
     <div>
