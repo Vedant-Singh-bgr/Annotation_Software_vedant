@@ -386,23 +386,43 @@ export default function KoshaWorkspace(props: Props) {
   const createSub = useCallback(async (label = "", fill = false) => {
     if (!editable || !selectedTask) return;
     const t = selectedTask;
-    const lastEnd = t.subTasks.reduce((m, s) => Math.max(m, s.endFrame), t.startFrame);
+    const gaps = coverage(t).gaps;
     let start: number;
     let end: number;
     if (fill) {
       // idle_wait / gap fill: cover the FIRST gap in the tiling (interior or
       // trailing), not just the end — so mid-task pauses close in one click.
-      const gap = coverage(t).gaps[0];
+      const gap = gaps[0];
       if (!gap) {
         flash("Task is already fully covered.");
         return;
       }
       [start, end] = gap;
     } else {
-      start = Math.max(t.startFrame, Math.min(currentFrame, t.endFrame - 1));
-      if (start < lastEnd && lastEnd < t.endFrame) start = lastEnd; // continue tiling
-      end = Math.min(t.endFrame, start + Math.round(fps));
-      if (end <= start) end = Math.min(t.endFrame, start + 1);
+      // Place the new sub-task in UNCOVERED space only.
+      //
+      // This used to start at the playhead and snap forward to the last
+      // sub-task's end, but only when `lastEnd < t.endFrame`. On a task that was
+      // already fully tiled that condition is false, so the snap never fired and
+      // the new sub-task was created on top of the existing ones — a task tiled
+      // perfectly then given one more sub-task picked up a huge overlap (150f in
+      // a 0–300 task with the playhead at 150), well past the ±15f tolerance,
+      // which blocks submit. Tiling correctly and then adding was unwinnable:
+      // overlap if you did, uncovered if you didn't.
+      if (gaps.length === 0) {
+        flash("This task is fully tiled — trim a sub-task to make room, then add.");
+        return;
+      }
+      // Prefer the gap under the playhead, else the next gap ahead of it, else
+      // the first one; the annotator's position is a hint, not a mandate.
+      const under = gaps.find(([gs, ge]) => currentFrame >= gs && currentFrame < ge);
+      const ahead = gaps.find(([gs]) => gs >= currentFrame);
+      const [gs, ge] = under ?? ahead ?? gaps[0];
+      start = under ? currentFrame : gs;
+      // Clamp to the gap, never the task span: ending at start+1s could otherwise
+      // run straight into the next sub-task and manufacture the same overlap.
+      end = Math.min(ge, start + Math.round(fps));
+      if (end <= start) end = Math.min(ge, start + 1);
     }
     setSaving(true);
     try {
