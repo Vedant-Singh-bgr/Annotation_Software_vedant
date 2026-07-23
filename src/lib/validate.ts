@@ -57,7 +57,9 @@ function label(t: VTask): string {
 // Sub-task tiling is checked to the guideline's L2 boundary precision (±15
 // frames), not frame-perfect — a gap/overlap this small is annotation noise, not
 // an error. Bigger than this is a real gap/overlap and blocks submit.
-const COVERAGE_TOLERANCE_FRAMES = 15;
+// Exported so the editor's coverage badge forgives exactly what submit forgives
+// — it applied no tolerance at all, and nagged about slop this check ignores.
+export const COVERAGE_TOLERANCE_FRAMES = 15;
 
 // Guideline duration guidance (soft — "usually", exceptions allowed).
 const L1_MIN_SEC = 30;

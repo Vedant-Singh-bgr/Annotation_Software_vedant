@@ -49,10 +49,33 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       data.qualityFlags = JSON.stringify(flags);
     }
 
-    const start = data.startFrame ?? task.startFrame;
-    const end = data.endFrame ?? task.endFrame;
-    if (Number(end) <= Number(start))
-      badRequest("endFrame must be greater than startFrame.");
+    const start = Number(data.startFrame ?? task.startFrame);
+    const end = Number(data.endFrame ?? task.endFrame);
+    if (end <= start) badRequest("endFrame must be greater than startFrame.");
+
+    // Refuse a span that would leave sub-tasks hanging outside their parent.
+    // Nothing checked this, so shrinking a task silently orphaned them — and
+    // every later PATCH to such a sub-task, even one only changing its label,
+    // was then rejected by the containment check in the sub-task route. The
+    // annotator was locked out of their own work with an error that named a
+    // span they had not touched.
+    if (data.startFrame !== undefined || data.endFrame !== undefined) {
+      const outside = await prisma.subTask.findMany({
+        where: {
+          taskId: id,
+          OR: [{ startFrame: { lt: start } }, { endFrame: { gt: end } }],
+        },
+        select: { label: true, startFrame: true, endFrame: true },
+        take: 5,
+      });
+      if (outside.length > 0)
+        badRequest(
+          `Task span ${start}–${end} would leave ${outside.length} sub-task(s) outside it ` +
+            `(${outside
+              .map((s) => `${s.label || "unlabeled"} ${s.startFrame}–${s.endFrame}`)
+              .join("; ")}). Trim or delete those sub-tasks first.`,
+        );
+    }
 
     const updated = await prisma.task.update({
       where: { id },

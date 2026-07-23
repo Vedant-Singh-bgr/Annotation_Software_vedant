@@ -28,7 +28,46 @@ type Drag = {
   prevEnd: number;
   clientX: number;
   clientY: number;
+  // Frames the dragged edge should latch onto: neighbouring block boundaries,
+  // the parent's bounds, the playhead. Without these an exact boundary is often
+  // literally unreachable — the whole clip is squeezed into ~900px, so one pixel
+  // of travel is 8 frames on a 4-minute segment and 30 on a 15-minute one, and
+  // the neighbour's frame simply isn't on that lattice.
+  snaps: number[];
 };
+
+// Latch to the nearest snap target within a few pixels of the cursor, so a drag
+// can land on a neighbour's exact boundary instead of straddling it.
+//
+// The window is measured in PIXELS (a few frames at fine zoom, many at coarse)
+// because that is what "looks like the same place" to the annotator, and it must
+// be at least half the frames-per-pixel step or exact boundaries stay off the
+// reachable lattice entirely. It is then capped at one second, so on a very long
+// session — where a pixel can be hundreds of frames — snapping quietly stops
+// rather than dragging blocks tens of seconds to a neighbour. At that zoom use
+// the numeric field or the ⇥ set-to-playhead button for precision.
+function applySnap(
+  value: number,
+  snaps: number[],
+  pxPerFrame: number,
+  fps: number,
+): number {
+  if (snaps.length === 0 || pxPerFrame <= 0) return value;
+  const tolerance = Math.min(
+    Math.max(1, Math.round(5 / pxPerFrame)),
+    Math.max(1, Math.round(fps || 30)),
+  );
+  let best = value;
+  let bestDist = tolerance + 1;
+  for (const s of snaps) {
+    const d = Math.abs(s - value);
+    if (d <= tolerance && d < bestDist) {
+      best = s;
+      bestDist = d;
+    }
+  }
+  return best;
+}
 
 type Props = {
   tasks: Task[];
@@ -174,12 +213,32 @@ export default function TimelineBoard({
       }
     }
 
+    // Snap targets: every OTHER block's edges at the same level, the parent's
+    // bounds, and the playhead. Excluding this entity's own edges keeps a drag
+    // from sticking to where it started.
+    const snaps: number[] = [currentFrame];
+    if (kind === "task") {
+      for (const t of tasks) {
+        if (t.id === entity.id) continue;
+        snaps.push(t.startFrame, t.endFrame);
+      }
+      snaps.push(0, fc);
+    } else {
+      const p = parent!;
+      snaps.push(p.startFrame, p.endFrame);
+      for (const s of p.subTasks) {
+        if (s.id === entity.id) continue;
+        snaps.push(s.startFrame, s.endFrame);
+      }
+    }
+
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setDrag({
       kind,
       id: entity.id,
       parentId: kind === "subtask" ? (parent?.id ?? null) : null,
       mode,
+      snaps,
       origStart: entity.startFrame,
       origEnd: entity.endFrame,
       startX: e.clientX,
@@ -203,12 +262,24 @@ export default function TimelineBoard({
     let en = drag.origEnd;
     if (drag.mode === "move") {
       const d = clamp(df, drag.lo, drag.hi);
-      s += d;
-      en += d;
+      // Snap the leading edge and carry the block with it, so a moved block can
+      // sit flush against its neighbour.
+      const snappedStart = applySnap(drag.origStart + d, drag.snaps, drag.pxPerFrame, fps);
+      const sd = clamp(snappedStart - drag.origStart, drag.lo, drag.hi);
+      s += sd;
+      en += sd;
     } else if (drag.mode === "start") {
-      s = clamp(drag.origStart + df, drag.lo, drag.hi);
+      s = clamp(
+        applySnap(drag.origStart + df, drag.snaps, drag.pxPerFrame, fps),
+        drag.lo,
+        drag.hi,
+      );
     } else {
-      en = clamp(drag.origEnd + df, drag.lo, drag.hi);
+      en = clamp(
+        applySnap(drag.origEnd + df, drag.snaps, drag.pxPerFrame, fps),
+        drag.lo,
+        drag.hi,
+      );
     }
     setDrag({
       ...drag,

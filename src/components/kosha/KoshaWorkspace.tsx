@@ -272,6 +272,16 @@ export default function KoshaWorkspace(props: Props) {
       } catch (e) {
         flash((e as Error).message);
         if ((e as { status?: number }).status === 403) resyncTasks();
+        // Put the patch BACK. It used to be dropped here, so a rejected edit
+        // left the screen showing a value the database never accepted — and
+        // because nothing was pending any more, the pre-submit flush reported
+        // success and submit failed later against data the annotator could not
+        // see. Re-queued (without rearming the timer, so it retries on the next
+        // edit or on flushSaves) it stays visibly unsaved instead.
+        pending.current[id] = {
+          kind: entry.kind,
+          patch: { ...entry.patch, ...(pending.current[id]?.patch ?? {}) },
+        };
         throw e;
       } finally {
         setSaving(false);
@@ -355,12 +365,29 @@ export default function KoshaWorkspace(props: Props) {
 
   const updateTask = useCallback(
     (id: string, patch: Partial<Task>) => {
+      // Send BOTH frame bounds whenever either moves. The server validates a
+      // partial patch against the STORED counterpart, so typing a new start and
+      // then a new end a moment later made the first request compare the new
+      // start against the OLD end — usually rejected, and a rejected patch was
+      // dropped while local state kept the typed value, leaving the screen and
+      // the database silently disagreeing.
+      let outgoing = patch as Record<string, unknown>;
+      if ("startFrame" in patch || "endFrame" in patch) {
+        const cur = tasksRef.current.find((t) => t.id === id);
+        if (cur) {
+          outgoing = {
+            ...outgoing,
+            startFrame: patch.startFrame ?? cur.startFrame,
+            endFrame: patch.endFrame ?? cur.endFrame,
+          };
+        }
+      }
       setTasks((prev) =>
         prev
           .map((t) => (t.id === id ? { ...t, ...patch } : t))
           .sort((a, b) => a.startFrame - b.startFrame),
       );
-      scheduleSave("task", id, patch as Record<string, unknown>);
+      scheduleSave("task", id, outgoing);
     },
     [scheduleSave],
   );
@@ -449,6 +476,18 @@ export default function KoshaWorkspace(props: Props) {
 
   const updateSub = useCallback(
     (id: string, patch: Partial<SubTask>) => {
+      // Same both-bounds rule as updateTask — see the comment there.
+      let outgoing = patch as Record<string, unknown>;
+      if ("startFrame" in patch || "endFrame" in patch) {
+        const cur = tasksRef.current.flatMap((t) => t.subTasks).find((s) => s.id === id);
+        if (cur) {
+          outgoing = {
+            ...outgoing,
+            startFrame: patch.startFrame ?? cur.startFrame,
+            endFrame: patch.endFrame ?? cur.endFrame,
+          };
+        }
+      }
       setTasks((prev) =>
         prev.map((t) => ({
           ...t,
@@ -457,7 +496,7 @@ export default function KoshaWorkspace(props: Props) {
             .sort((a, b) => a.startFrame - b.startFrame),
         })),
       );
-      scheduleSave("subtask", id, patch as Record<string, unknown>);
+      scheduleSave("subtask", id, outgoing);
     },
     [scheduleSave],
   );

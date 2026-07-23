@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { Task, SubTask, Taxonomies, taskOverlaps, coverage } from "./shared";
 import { DIFFICULTIES, TASK_QUALITY_FLAGS } from "@/lib/kosha";
-import { taskDurationHint, subTaskDurationHint } from "@/lib/validate";
+import { taskDurationHint, subTaskDurationHint, COVERAGE_TOLERANCE_FRAMES } from "@/lib/validate";
 
 // Auto-flag raised when an annotator enters a taxonomy value that isn't on the
 // approved list (job / venue L2 / venue L3). Reviewers clear it once vetted.
@@ -354,6 +354,14 @@ function TaskEditor({
 }: Props & { task: Task }) {
   const dis = !editable;
   const cov = task.subTasks.length > 0 ? coverage(task) : null;
+  // The badge used to apply zero tolerance while submit forgives ±15f, so it
+  // nagged about slop the checker deliberately ignores. Same threshold now.
+  const gapFrames = cov ? cov.gaps.reduce((n, [s, e]) => n + (e - s), 0) : 0;
+  const withinTolerance =
+    !!cov &&
+    (gapFrames > 0 || cov.overlaps > 0) &&
+    gapFrames <= COVERAGE_TOLERANCE_FRAMES &&
+    cov.overlaps <= COVERAGE_TOLERANCE_FRAMES;
   const dur = (frames: number) => (fps > 0 ? (frames / fps).toFixed(1) : "–");
   const onUpdate = (patch: Partial<Task>) => onUpdateTask(task.id, patch);
 
@@ -476,21 +484,27 @@ function TaskEditor({
               })}
             </div>
             <div className="flex items-center justify-between text-[10px] tabular-nums">
-              <span
-                className={
-                  cov.pct === 100 && cov.overlaps === 0
-                    ? "text-accent-green"
-                    : "text-accent-yellow"
-                }
-              >
-                {cov.pct === 100 && cov.overlaps === 0 ? "✓ fully tiled" : `${cov.pct}% tiled`}
+              {/* Gate the green tick on the actual gap/overlap counts, never on
+                  the rounded percentage: a 1-frame gap in a 300-frame task is
+                  299/300 = 99.67%, which rounds to 100 and printed "✓ fully
+                  tiled" directly beside "1 gap". */}
+              <span className={gapFrames === 0 && cov.overlaps === 0 ? "text-accent-green" : "text-accent-yellow"}>
+                {gapFrames === 0 && cov.overlaps === 0
+                  ? "✓ fully tiled"
+                  : withinTolerance
+                    ? `${cov.pct}% tiled · within tolerance`
+                    : `${cov.pct}% tiled`}
               </span>
+              {/* Both counts, not one or the other — the old ternary hid an
+                  overlap whenever a gap also existed, while the QA checklist
+                  reported both, so the two surfaces disagreed. */}
               <span className="text-ink-400">
-                {cov.gaps.length > 0
-                  ? `${cov.gaps.length} gap${cov.gaps.length === 1 ? "" : "s"}`
-                  : cov.overlaps > 0
-                    ? `${cov.overlaps}f overlap`
-                    : ""}
+                {[
+                  gapFrames > 0 ? `${gapFrames}f gap` : null,
+                  cov.overlaps > 0 ? `${cov.overlaps}f overlap` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             </div>
           </>
