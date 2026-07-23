@@ -8,7 +8,15 @@ WORKDIR /app
 
 # ffmpeg for the stream-copy; imageio-ffmpeg also ships a binary, but the system
 # one is a reliable fallback.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+# fonts-dejavu-core + fontconfig are REQUIRED, not optional: the overlay render
+# draws labels through libass and drawtext, and this base image ships no fonts.
+# Without them libass has nothing to resolve the style's font family to and
+# drawtext aborts with "Cannot find a valid font for the family Sans", so every
+# overlay job fails. --no-install-recommends also skips ffmpeg's own font deps.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ffmpeg fontconfig fonts-dejavu-core \
+    && fc-cache -f \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY scripts/requirements.txt ./scripts/requirements.txt
 RUN pip install --no-cache-dir -r scripts/requirements.txt

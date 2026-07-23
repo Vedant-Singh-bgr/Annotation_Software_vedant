@@ -104,7 +104,7 @@ def ass_escape(text: str) -> str:
     return re.sub(r"[\r\n]+", " ", out).strip()
 
 
-def build_ass(export: dict, fps: float, width: int, height: int) -> str:
+def build_ass(export: dict, fps: float, width: int, height: int, font: str) -> str:
     """Render the export's L1/L2/Q rows as a timed ASS subtitle track.
 
     Layout mirrors the in-app HUD so the burned video reads the same as the
@@ -122,9 +122,9 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: L1,DejaVu Sans,26,&H00F5A25D,&H00000000,&H80000000,-1,0,1,2,1,7,16,16,44,1
-Style: L2,DejaVu Sans,22,&H0086E5FD,&H00000000,&H80000000,0,0,1,2,1,7,16,16,80,1
-Style: Q,DejaVu Sans,18,&H00FFFFFF,&H00000000,&H80000000,0,0,3,1,0,7,16,16,112,1
+Style: L1,{font},26,&H00F5A25D,&H00000000,&H80000000,-1,0,1,2,1,7,16,16,44,1
+Style: L2,{font},22,&H0086E5FD,&H00000000,&H80000000,0,0,1,2,1,7,16,16,80,1
+Style: Q,{font},18,&H00FFFFFF,&H00000000,&H80000000,0,0,3,1,0,7,16,16,112,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -217,6 +217,11 @@ def main() -> None:
                     help="render height (0 = keep source height)")
     ap.add_argument("--crf", type=int, default=23, help="x264 CRF for the rendered MP4")
     ap.add_argument("--preset", default="veryfast", help="x264 preset")
+    # Named explicitly rather than leaning on the "Sans" default: the worker
+    # image installs fonts-dejavu-core, and a family that resolves nowhere makes
+    # drawtext abort and libass draw nothing.
+    ap.add_argument("--font", default="DejaVu Sans",
+                    help="font family (must exist in the rendering environment)")
     ap.add_argument("--report-url", default=None)
     ap.add_argument("--report-secret", default=None)
     args = ap.parse_args()
@@ -272,7 +277,7 @@ def run(args) -> None:
 
     ass_path = os.path.join(work, "labels.ass")
     with open(ass_path, "w", encoding="utf-8") as f:
-        f.write(build_ass(export, fps, out_w, out_h))
+        f.write(build_ass(export, fps, out_w, out_h, args.font))
 
     # ffmpeg filter paths are parsed, not passed literally: on Windows a
     # backslash and the drive colon both need escaping inside the filtergraph.
@@ -283,8 +288,8 @@ def run(args) -> None:
     chain.append(f"ass='{ass_arg}'")
     # The frame counter is the one truly per-frame value, so it stays a drawtext.
     chain.append(
-        "drawtext=text='frame %{n}':x=16:y=16:fontsize=24:fontcolor=white:"
-        "borderw=2:bordercolor=black@0.8"
+        f"drawtext=font='{args.font}':text='frame %{{n}}':x=16:y=16:fontsize=24:"
+        "fontcolor=white:borderw=2:bordercolor=black@0.8"
     )
 
     cmd = [ffmpeg_exe(), "-y", "-loglevel", "error", "-stats",
