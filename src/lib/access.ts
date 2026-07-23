@@ -18,11 +18,26 @@ export async function getAuthorizedAssignment(user: SessionUser, assignmentId: s
   if (!assignment) notFound("Assignment not found");
 
   const orgId = assignment.clip.batch.project.organizationId;
-  if (user.role === "ANNOTATOR" && assignment.annotatorId !== user.id) {
-    forbidden("This task is not assigned to you.");
-  }
-  if (user.role === "ORG_ADMIN" && orgId !== user.organizationId) {
-    forbidden("This task belongs to another organization.");
+  // Explicit allowlist with a default DENY. This was a denylist — anything that
+  // wasn't ANNOTATOR or ORG_ADMIN fell through to allow, which was correct only
+  // because PLATFORM_ADMIN was the sole remaining role. Any role string added
+  // later (a reviewer/QC tier, a stale value, a typo in a seed) would have
+  // silently inherited platform-admin reach over every assignment in every
+  // organisation. Twelve route handlers and two pages take their entire
+  // authorization from this function, so the fall-through is now closed.
+  switch (user.role) {
+    case "PLATFORM_ADMIN":
+      break; // unscoped by design
+    case "ORG_ADMIN":
+      if (orgId !== user.organizationId)
+        forbidden("This task belongs to another organization.");
+      break;
+    case "ANNOTATOR":
+      if (assignment.annotatorId !== user.id)
+        forbidden("This task is not assigned to you.");
+      break;
+    default:
+      forbidden("Not authorized for this assignment.");
   }
   return assignment;
 }

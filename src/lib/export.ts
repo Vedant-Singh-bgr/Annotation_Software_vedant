@@ -14,6 +14,10 @@ export async function buildAssignmentExport(assignment: {
     fps: number;
     frameCount: number | null;
     r2Key?: string | null;
+    sourceEtag?: string | null;
+    sourceSizeBytes?: number | null;
+    sourceLastModified?: Date | null;
+    sourceVerifiedAt?: Date | null;
     sessionId: string | null;
     sessionHash: string | null;
     dataType: string | null;
@@ -133,6 +137,15 @@ export async function buildAssignmentExport(assignment: {
       // rate and adds/drops no frames), so only the pixels differ. For sessions
       // this is null — segments[] below, keyed by sha256, is the source of truth.
       source_r2_key: clip.r2Key ?? null,
+      // Content identity of that object, read from R2 at import. A consumer can
+      // HEAD source_r2_key and compare these before trusting this label file —
+      // without them the pairing is a name, not a verifiable fact. Null on
+      // clips imported before this was captured, and on MCAP sessions (whose
+      // provenance lives in segments[] as per-blob sha256).
+      source_etag: clip.sourceEtag ?? null,
+      source_size_bytes: clip.sourceSizeBytes ?? null,
+      source_last_modified: clip.sourceLastModified?.toISOString() ?? null,
+      source_verified_at: clip.sourceVerifiedAt?.toISOString() ?? null,
       segments: segments.map((s) => ({
         order: s.orderIndex,
         logical_path: s.logicalPath,

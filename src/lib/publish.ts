@@ -117,6 +117,10 @@ export type BatchPublishEntry = {
   // untouched video straight from the manifest — without it, the manifest only
   // points at the downscaled proxy.
   sourceR2Key: string | null;
+  // Content identity of the source object, so a consumer can verify the pairing
+  // straight from the manifest rather than trusting the key string.
+  sourceEtag: string | null;
+  sourceSizeBytes: number | null;
   exportR2Key: string | null;
   exportedAt: string | null;
   error: string | null;
@@ -168,6 +172,8 @@ export async function publishBatchExports(batchId: string): Promise<BatchPublish
       annotator: a.annotator.name,
       proxyR2Key: a.clip.proxyR2Key ?? null,
       sourceR2Key: a.clip.r2Key ?? null,
+      sourceEtag: a.clip.sourceEtag ?? null,
+      sourceSizeBytes: a.clip.sourceSizeBytes ?? null,
       exportR2Key: null,
       exportedAt: null,
       error: null,

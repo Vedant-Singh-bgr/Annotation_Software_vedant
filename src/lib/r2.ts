@@ -1,6 +1,7 @@
 import {
   S3Client,
   GetObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
@@ -40,7 +41,14 @@ export type R2Object = {
   key: string;
   size: number;
   lastModified: string | null;
+  etag: string | null;
   isVideo: boolean;
+};
+
+export type R2ObjectIdentity = {
+  etag: string | null;
+  size: number | null;
+  lastModified: string | null;
 };
 
 export type R2Listing = {
@@ -74,6 +82,11 @@ export async function listR2Objects(opts: {
       key: o.Key!,
       size: o.Size ?? 0,
       lastModified: o.LastModified ? o.LastModified.toISOString() : null,
+      // Carried through so the import can record content identity rather than
+      // trusting a browser-supplied size. For single-part uploads R2's ETag is
+      // the MD5 of the object, which is what makes the annotation<->video link
+      // checkable instead of merely conventional.
+      etag: o.ETag ? o.ETag.replace(/"/g, "") : null,
       isVideo: VIDEO_EXT.test(o.Key!),
     }));
 
@@ -82,6 +95,30 @@ export async function listR2Objects(opts: {
     objects,
     nextToken: res.IsTruncated ? (res.NextContinuationToken ?? null) : null,
   };
+}
+
+/**
+ * Server-side content identity for one object: ETag, true byte length and
+ * last-modified. Read from R2 rather than taken from the client, because the
+ * import route's only other size source is a number the browser supplied.
+ *
+ * Returns nulls rather than throwing when the object is missing or R2 is
+ * unreachable — capturing identity is a hardening step, and failing to capture
+ * it must not block an import that would otherwise succeed.
+ */
+export async function headR2Object(key: string): Promise<R2ObjectIdentity> {
+  try {
+    const res = await r2Client().send(
+      new HeadObjectCommand({ Bucket: process.env.R2_BUCKET!, Key: key }),
+    );
+    return {
+      etag: res.ETag ? res.ETag.replace(/"/g, "") : null,
+      size: typeof res.ContentLength === "number" ? res.ContentLength : null,
+      lastModified: res.LastModified ? res.LastModified.toISOString() : null,
+    };
+  } catch {
+    return { etag: null, size: null, lastModified: null };
+  }
 }
 
 export type R2SessionManifest = {

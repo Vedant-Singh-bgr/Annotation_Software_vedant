@@ -104,7 +104,19 @@ model Clip {
   title       String
   r2Key       String? // legacy single-object key (manual/flat clips)
   sourceUrl   String? // fallback playback URL when R2/proxy is not configured
-  sizeBytes   Int? // total session bytes, if known
+  sizeBytes   Int? // total session bytes, if known (client-reported at import)
+
+  // Content identity of the SOURCE object, read from R2 at import rather than
+  // taken from the client. A flat MP4 clip is otherwise linked to its
+  // annotations by key string alone: if the bytes at that key are ever
+  // replaced, nothing in a published export could detect it. MCAP sessions
+  // already have this via ClipSegment.sha256; this gives flat clips the
+  // equivalent. Float, not Int, because Prisma's Int is 32-bit and a long
+  // recording exceeds 2 GB.
+  sourceEtag         String? // R2 ETag — the MD5 for single-part uploads
+  sourceSizeBytes    Float? // true ContentLength from R2
+  sourceLastModified DateTime?
+  sourceVerifiedAt   DateTime? // when identity was last read from R2
   fps         Float    @default(30)
   frameCount  Int? // total frames across the session, if known
   durationSec Float? // total duration in seconds, if known

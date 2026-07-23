@@ -38,6 +38,14 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     const { id } = await params;
     const assignment = await getAuthorizedAssignment(user, id);
     if (user.role === "ANNOTATOR") forbidden("Only reviewers can publish an export.");
+    // Approval is the delivery gate everywhere else — it is what publishes to
+    // R2 and queues the overlay. This route had no status check at all, and the
+    // review page renders its Publish button on every row, so SUBMITTED and
+    // even REJECTED work could be pushed to R2 and rendered as a deliverable.
+    if (assignment.status !== "APPROVED")
+      forbidden(
+        `Only approved assignments can be published (this one is ${assignment.status.toLowerCase()}).`,
+      );
 
     const { key, bytes } = await publishAssignmentExport(assignment);
     return { published: { key, bytes } };
