@@ -17,6 +17,62 @@ function authorize(req: NextRequest): void {
   if (header !== secret) forbidden("Invalid worker secret.");
 }
 
+// Claim a queued overlay render (burn an approved assignment's labels onto its
+// video). Returns null when there is nothing to do, so the caller can fall
+// through. Same atomic claim pattern as the transcode path.
+async function claimOverlay() {
+  const candidate = await prisma.assignment.findFirst({
+    where: { overlayStatus: "queued", status: "APPROVED" },
+    orderBy: { updatedAt: "asc" },
+    select: { id: true },
+  });
+  if (!candidate) return null;
+
+  const claimed = await prisma.assignment.updateMany({
+    where: { id: candidate.id, overlayStatus: "queued" },
+    data: { overlayStatus: "rendering", overlayError: null },
+  });
+  if (claimed.count === 0) return null; // lost the race
+
+  const a = await prisma.assignment.findUnique({
+    where: { id: candidate.id },
+    include: { clip: true },
+  });
+  if (!a) return null;
+
+  // Burn onto the ORIGINAL upload by default so the deliverable is full quality,
+  // not the downscaled scrub proxy. Frame indices are identical in both, so the
+  // labels line up either way; this is purely about output fidelity. Fall back
+  // to whichever one actually exists.
+  const original = a.clip.r2Key ?? null;
+  const proxy = a.clip.proxyR2Key ?? null;
+  const preferred = a.overlaySource === "proxy" ? proxy : original;
+  const videoKey = preferred ?? proxy ?? original;
+  if (!videoKey || !a.exportR2Key) {
+    await prisma.assignment.update({
+      where: { id: a.id },
+      data: {
+        overlayStatus: "failed",
+        overlayError: !videoKey
+          ? "No source video in R2 to burn onto."
+          : "No published export JSON — publish the assignment first.",
+      },
+    });
+    return null;
+  }
+
+  // Land the overlay beside the export it was rendered from.
+  const dir = a.exportR2Key.replace(/\/annotations\/[^/]*$/, "");
+  return {
+    kind: "overlay" as const,
+    assignmentId: a.id,
+    videoKey,
+    exportKey: a.exportR2Key,
+    overlayKey: `${dir}/overlays/${a.id}.mp4`,
+    source: videoKey === original ? "original" : "proxy",
+  };
+}
+
 export async function POST(req: NextRequest) {
   return handle(async () => {
     authorize(req);
@@ -29,7 +85,12 @@ export async function POST(req: NextRequest) {
       orderBy: { createdAt: "asc" },
       select: { id: true },
     });
-    if (!candidate) return { job: null };
+    // Transcodes come first: an overlay burns onto a video the transcode may
+    // still be producing, so draining proxies keeps the pipeline in order.
+    if (!candidate) {
+      const overlay = await claimOverlay();
+      return { job: overlay };
+    }
 
     const claimed = await prisma.clip.updateMany({
       where: { id: candidate.id, proxyStatus: "queued" },
@@ -45,6 +106,9 @@ export async function POST(req: NextRequest) {
 
     return {
       job: {
+        // Job kind, so the worker dispatches explicitly rather than sniffing
+        // which fields happen to be present.
+        kind: "transcode" as const,
         clipId: clip.id,
         // "session" = concatenate MCAP segments; "flat" = one video object in the
         // bucket (an imported MP4) that just needs the scrub-friendly re-encode.

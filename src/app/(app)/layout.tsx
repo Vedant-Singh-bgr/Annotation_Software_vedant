@@ -38,6 +38,7 @@ export default async function AppLayout({
           { href: "/admin/organizations", label: "Organizations" },
           { href: "/admin/projects", label: "Projects & Clips" },
           { href: "/review", label: "Review", badge: submittedCount },
+          { href: "/admin/overlays", label: "Overlay Clips" },
           { href: "/admin/taxonomies", label: "Approved Lists" },
         ]
       : user.role === "ORG_ADMIN"

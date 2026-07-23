@@ -171,6 +171,16 @@ model Assignment {
   exportedAt     DateTime?
   exportError    String?
 
+  // Burned-in overlay MP4: the labels rendered ONTO the video, so the delivered
+  // artefact is watchable without the platform. Rendered per assignment (each
+  // annotator's read of the clip is a different video) and only once APPROVED,
+  // so nothing unreviewed ever ships. Queued automatically on publish.
+  overlayStatus     String    @default("none") // none | queued | rendering | ready | failed
+  overlayR2Key      String?
+  overlayError      String?
+  overlaySource     String    @default("original") // original | proxy — which MP4 to burn onto
+  overlayRenderedAt DateTime?
+
   tasks        Task[]
   frameQuality FrameQuality[]
 

@@ -99,7 +99,61 @@ def report_failure(clip_id: str, message: str) -> None:
         print(f"[worker] could not report failure for {clip_id}: {e}", file=sys.stderr, flush=True)
 
 
+def report_overlay_failure(assignment_id: str, message: str) -> None:
+    """Tell the app an overlay render failed so it leaves the 'rendering' state."""
+    payload = json.dumps({"status": "failed", "error": message}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{APP_URL}/api/admin/assignments/{assignment_id}/overlay",
+        data=payload,
+        method="POST",
+        headers={"content-type": "application/json", "x-transcode-secret": SECRET},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=30).read()
+    except Exception as e:  # best-effort
+        print(f"[worker] could not report overlay failure for {assignment_id}: {e}",
+              file=sys.stderr, flush=True)
+
+
+def run_overlay_job(job: dict) -> None:
+    """Burn an approved assignment's labels onto its video and upload the result."""
+    assignment_id = job["assignmentId"]
+    base_tmp = os.environ.get("TRANSCODE_TMPDIR") or None
+    work = tempfile.mkdtemp(prefix="kosha-overlay-", dir=base_tmp)
+    out = os.path.join(work, "overlay.mp4")
+    report_url = f"{APP_URL}/api/admin/assignments/{assignment_id}/overlay"
+
+    cmd = [
+        sys.executable,
+        os.path.join(BASE, "scripts", "render_overlay.py"),
+        "--video-key", job["videoKey"],
+        "--export-key", job["exportKey"],
+        "--out", out,
+        "--upload-key", job["overlayKey"],
+        "--report-url", report_url,
+        "--report-secret", SECRET,
+    ]
+    print(f"[worker] overlay {assignment_id} [{job.get('source')}] -> {job['overlayKey']} (rendering…)",
+          flush=True)
+    child_env = {**os.environ, "TEMP": work, "TMP": work, "TMPDIR": work}
+    try:
+        rc = subprocess.run(cmd, cwd=BASE, env=child_env).returncode
+    except Exception as e:
+        report_overlay_failure(assignment_id, f"worker crashed: {e}")
+        shutil.rmtree(work, ignore_errors=True)
+        raise
+    print(f"[worker] overlay {assignment_id} finished rc={rc}", flush=True)
+    if rc != 0:
+        report_overlay_failure(assignment_id, f"render_overlay.py exited with code {rc}")
+    shutil.rmtree(work, ignore_errors=True)
+
+
 def run_job(job: dict) -> None:
+    # Two job kinds share this worker: proxy transcodes and overlay renders.
+    # Older app versions send no `kind`, so absence means transcode.
+    if job.get("kind") == "overlay":
+        run_overlay_job(job)
+        return
     clip_id = job["clipId"]
     base_tmp = os.environ.get("TRANSCODE_TMPDIR") or None
     work = tempfile.mkdtemp(prefix="kosha-worker-", dir=base_tmp)

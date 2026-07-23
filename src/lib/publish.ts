@@ -61,7 +61,17 @@ export async function publishAssignmentExport(
 
   await prisma.assignment.update({
     where: { id: assignment.id },
-    data: { exportR2Key: key, exportedAt: new Date(), exportError: null },
+    data: {
+      exportR2Key: key,
+      exportedAt: new Date(),
+      exportError: null,
+      // Queue the burned-in overlay render. Publishing is the moment the labels
+      // become final, so it is exactly when the watchable artefact should be
+      // built. Only APPROVED work reaches here, so nothing unreviewed renders.
+      // Re-publishing re-queues, which is what you want after a correction.
+      overlayStatus: "queued",
+      overlayError: null,
+    },
   });
 
   return { key, bytes: JSON.stringify(body).length };
