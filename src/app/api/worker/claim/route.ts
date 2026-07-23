@@ -46,6 +46,16 @@ export async function POST(req: NextRequest) {
     return {
       job: {
         clipId: clip.id,
+        // "session" = concatenate MCAP segments; "flat" = one video object in the
+        // bucket (an imported MP4) that just needs the scrub-friendly re-encode.
+        // The worker branches on this rather than guessing from empty segments[].
+        mode: clip.sessionId ? "session" : "flat",
+        sourceKey: clip.sessionId ? null : clip.r2Key,
+        proxyKey: clip.sessionId
+          ? clip.tenantId
+            ? `tenants/${clip.tenantId}/proxies/${clip.sessionId}/ego.mp4`
+            : `proxies/${clip.sessionId}/ego.mp4`
+          : `proxies/clips/${clip.id}/proxy.mp4`,
         sessionId: clip.sessionId,
         sessionHash: clip.sessionHash,
         tenantId: clip.tenantId,

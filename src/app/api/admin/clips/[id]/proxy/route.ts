@@ -60,7 +60,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     const meta: Record<string, any> = body.metadata ?? body;
 
     const segMeta: SegMeta[] = Array.isArray(meta.segments) ? meta.segments : [];
-    if (segMeta.length === 0)
+    // A flat clip (a single video imported from the bucket) has no MCAP segments,
+    // so it legitimately reports none. Only a session must account for its
+    // segments — for those, an empty list means the transcode told us nothing
+    // about frame ranges and the export's source mapping would be wrong.
+    if (segMeta.length === 0 && clip!.segments.length > 0)
       badRequest("Transcode metadata has no segments[] with frame ranges.");
 
     const fps = Number(meta.fps);
@@ -75,10 +79,16 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ""),
       );
 
+    // Prefer the reported total; fall back to the highest segment end frame.
+    // Math.max() of an empty list is -Infinity, so guard the flat-clip case
+    // (no segments) rather than writing a nonsense frame count.
     const frameCount =
       Number.isFinite(Number(meta.frame_count)) && Number(meta.frame_count) > 0
         ? Math.round(Number(meta.frame_count))
-        : Math.max(...segMeta.map((s) => Number(s.end_frame) || 0));
+        : segMeta.length > 0
+          ? Math.max(...segMeta.map((s) => Number(s.end_frame) || 0))
+          : 0;
+    if (frameCount <= 0) badRequest("Transcode metadata is missing a valid frame count.");
     const durationSec =
       Number.isFinite(Number(meta.duration_sec)) && Number(meta.duration_sec) > 0
         ? Number(meta.duration_sec)

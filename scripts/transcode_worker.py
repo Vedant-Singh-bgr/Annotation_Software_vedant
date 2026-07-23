@@ -101,38 +101,56 @@ def report_failure(clip_id: str, message: str) -> None:
 
 def run_job(job: dict) -> None:
     clip_id = job["clipId"]
-    manifest = {
-        "schema_version": 2,
-        "session_id": job["sessionId"],
-        "session_hash": job["sessionHash"],
-        "tenant_id": job["tenantId"],
-        "worker_id": job["workerId"],
-        "data_type": job["dataType"],
-        "assets": job["segments"],
-    }
     base_tmp = os.environ.get("TRANSCODE_TMPDIR") or None
     work = tempfile.mkdtemp(prefix="kosha-worker-", dir=base_tmp)
-    mpath = os.path.join(work, "manifest.json")
     out = os.path.join(work, "proxy.mp4")
-    json.dump(manifest, open(mpath, "w"))
+
+    # "flat" jobs are single video objects imported straight from the bucket
+    # (an MP4), not sessions of MCAP segments. They still get a proxy: the
+    # import keeps the recorder's GOP and resolution, which is what makes
+    # scrubbing stall. Older app versions don't send `mode`, so infer it.
+    mode = job.get("mode") or ("session" if job.get("sessionId") else "flat")
 
     tenant = job["tenantId"]
-    key = (
+    key = job.get("proxyKey") or (
         f"tenants/{tenant}/proxies/{job['sessionId']}/ego.mp4"
         if tenant
         else f"proxies/{job['sessionId']}/ego.mp4"
     )
     report_url = f"{APP_URL}/api/admin/clips/{clip_id}/proxy"
+    script = os.path.join(BASE, "scripts", "transcode_session.py")
+
+    if mode == "flat":
+        source_key = job.get("sourceKey")
+        if not source_key:
+            report_failure(clip_id, "flat transcode job has no sourceKey")
+            shutil.rmtree(work, ignore_errors=True)
+            return
+        source_args = ["--source-key", source_key]
+    else:
+        manifest = {
+            "schema_version": 2,
+            "session_id": job["sessionId"],
+            "session_hash": job["sessionHash"],
+            "tenant_id": job["tenantId"],
+            "worker_id": job["workerId"],
+            "data_type": job["dataType"],
+            "assets": job["segments"],
+        }
+        mpath = os.path.join(work, "manifest.json")
+        json.dump(manifest, open(mpath, "w"))
+        source_args = ["--manifest", mpath]
+
     cmd = [
         sys.executable,
-        os.path.join(BASE, "scripts", "transcode_session.py"),
-        "--manifest", mpath,
+        script,
+        *source_args,
         "--out", out,
         "--upload-key", key,
         "--report-url", report_url,
         "--report-secret", SECRET,
     ]
-    print(f"[worker] clip {clip_id} -> {key} (transcoding…)", flush=True)
+    print(f"[worker] clip {clip_id} [{mode}] -> {key} (transcoding…)", flush=True)
     # Keep the child's scratch (blob downloads, ffmpeg temp) inside the work dir.
     child_env = {**os.environ, "TEMP": work, "TMP": work, "TMPDIR": work}
     try:

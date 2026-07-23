@@ -23,6 +23,8 @@ Prints a JSON metadata blob on stdout (fps, frame_count, duration_sec, segments[
 import argparse
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -117,6 +119,12 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mcap", action="append", help="local MCAP segment path (repeatable)")
     ap.add_argument("--manifest", help="session manifest.json (downloads blobs from R2)")
+    # Flat-clip mode: a single already-playable video (an MP4 imported straight
+    # from the bucket) rather than a session of MCAP segments. It still needs the
+    # proxy treatment — an imported MP4 keeps whatever GOP and resolution the
+    # recorder produced, which is what makes scrubbing freeze.
+    ap.add_argument("--source-key", help="R2 key of a single video file to build a proxy from")
+    ap.add_argument("--source-file", help="local path of a single video file to build a proxy from")
     ap.add_argument("--topic", default=DEFAULT_TOPIC)
     ap.add_argument("--out", default="proxy.mp4")
     ap.add_argument("--fps", type=float, default=None, help="override measured fps")
@@ -152,7 +160,109 @@ def main() -> None:
         raise
 
 
+def proxy_encode_args(args, gop: int) -> tuple[list[str], list[str]]:
+    """The scrub-friendly proxy encode settings, shared by both input modes.
+
+    Returns (video filter args, codec args). See the comment in run() for why
+    dense keyframes and no B-frames matter here.
+    """
+    vcodec = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", args.preset,
+              "-crf", str(args.crf),
+              "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
+              # No B-frames: decode order == display order, so stepping backwards
+              # a frame at a time doesn't force the decoder to reorder buffers.
+              "-bf", "0",
+              # Baseline-ish decode complexity + a level every browser accepts.
+              "-profile:v", "high", "-level", "4.1",
+              # Web player hint: lets the browser start rendering sooner.
+              "-movflags", "+faststart"]
+    vfilter: list[str] = []
+    if args.max_height and args.max_height > 0:
+        # Downscale only (never upscale) and keep even dimensions for yuv420p.
+        vfilter = ["-vf", f"scale=-2:'min(ih,{args.max_height})'"]
+    return vfilter, vcodec
+
+
+def probe_fps(path: str) -> float | None:
+    """Read the source frame rate out of ffmpeg's stream banner."""
+    p = subprocess.run([ffmpeg_exe(), "-i", path], capture_output=True, text=True)
+    m = re.search(r"(\d+(?:\.\d+)?)\s+fps", p.stderr)
+    return float(m.group(1)) if m else None
+
+
+def run_flat(args) -> None:
+    """Build a proxy from ONE already-playable video file (not MCAP segments).
+
+    This is the path for clips imported straight out of the bucket as MP4s. They
+    play as-is, so nothing here is about playability — it's about seeking. An
+    imported MP4 carries the recorder's GOP (multi-second on these rigs) at full
+    resolution, so every scrub decodes from a distant keyframe. Re-encoding gives
+    them the same dense-keyframe proxy a session gets.
+
+    It also fixes the frame rate: a flat import guesses fps from the batch
+    default, and a wrong fps silently shifts every exported frame index. Here we
+    measure it from the file and report it back.
+    """
+    src = args.source_file
+    tmpdir = None
+    if not src:
+        out_dir = os.path.dirname(os.path.abspath(args.out)) or None
+        tmpdir = tempfile.mkdtemp(prefix="flat_", dir=out_dir)
+        src = os.path.join(tmpdir, os.path.basename(args.source_key) or "source.mp4")
+        print(f"# downloading {args.source_key} from R2…", file=sys.stderr)
+        download_from_r2(args.source_key, src)
+
+    fps = args.fps or probe_fps(src)
+    if not fps or fps <= 0:
+        raise SystemExit(f"Could not determine the frame rate of {args.source_key or src}.")
+
+    gop = args.gop if args.gop and args.gop > 0 else max(1, round(fps / 2))
+    vfilter, vcodec = proxy_encode_args(args, gop)
+    # -r on both sides pins constant frame rate, so output frame i is source
+    # frame i and the annotator's frame indices stay meaningful.
+    cmd = [ffmpeg_exe(), "-y", "-loglevel", "error", "-stats",
+           "-r", f"{fps:.6f}", "-i", src, "-an", *vfilter, *vcodec,
+           "-r", f"{fps:.6f}", args.out]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise SystemExit(f"ffmpeg failed: {p.stderr.strip()[-400:]}")
+
+    # Exact output frame count, straight from the encoder's own progress stats —
+    # no second decode pass just to count.
+    counts = re.findall(r"frame=\s*(\d+)", p.stderr)
+    total_frames = int(counts[-1]) if counts else 0
+    if total_frames <= 0:
+        raise SystemExit("ffmpeg reported no encoded frames.")
+
+    duration = total_frames / fps
+    if args.upload_key:
+        print(f"# uploading proxy to R2: {args.upload_key}", file=sys.stderr)
+        upload_to_r2(args.out, args.upload_key)
+    if tmpdir:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    metadata = {
+        "out": args.out,
+        "codec": "h264",
+        "proxy_codec": "h264",
+        "proxy_mode": "reencode",
+        "fps": round(fps, 4),
+        "frame_count": total_frames,
+        "duration_sec": round(duration, 3),
+        "uploaded_key": args.upload_key,
+        # A flat clip has no MCAP segments, so there are no per-segment frame
+        # ranges to report. The report route accepts this for non-session clips.
+        "segments": [],
+    }
+    print(json.dumps(metadata, indent=2))
+    if args.report_url:
+        report_result(args.report_url, args.report_secret, metadata)
+
+
 def run(args) -> None:
+    if args.source_key or args.source_file:
+        run_flat(args)
+        return
     segments = resolve_segments(args)
     h264_path = args.out + ".h264"
     seg_meta = []
@@ -209,19 +319,7 @@ def run(args) -> None:
         # DENSE keyframes (short GOP, no scene-cut keyframes) make frame-accurate
         # seeking/stepping snappy: a seek never decodes more than ~0.5s of video.
         gop = args.gop if args.gop and args.gop > 0 else max(1, round(fps / 2))
-        vcodec = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", args.preset,
-                  "-crf", str(args.crf),
-                  "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
-                  # No B-frames: decode order == display order, so stepping backwards
-                  # a frame at a time doesn't force the decoder to reorder buffers.
-                  "-bf", "0",
-                  # Baseline-ish decode complexity + a level every browser accepts.
-                  "-profile:v", "high", "-level", "4.1",
-                  # Web player hint: lets the browser start rendering sooner.
-                  "-movflags", "+faststart"]
-        if args.max_height and args.max_height > 0:
-            # Downscale only (never upscale) and keep even dimensions for yuv420p.
-            vfilter = ["-vf", f"scale=-2:'min(ih,{args.max_height})'"]
+        vfilter, vcodec = proxy_encode_args(args, gop)
     else:
         vcodec = ["-c:v", "copy", "-movflags", "+faststart"]
     subprocess.run(

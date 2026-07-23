@@ -394,6 +394,10 @@ function ClipRow({
   onChange: () => void;
 }) {
   const isSession = Boolean(c.sessionId);
+  // Flat clips (a single MP4 imported from the bucket) can be transcoded too.
+  // They already play, but they carry the recorder's GOP and resolution, so
+  // scrubbing them stalls until they get the same proxy a session gets.
+  const canTranscode = isSession || Boolean(c.r2Key);
   const [open, setOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
@@ -438,7 +442,7 @@ function ClipRow({
             {c.frameCount ? ` · ${c.frameCount}f` : ""}
           </span>
         )}
-        {isSession && (
+        {canTranscode && (
           <button
             onClick={() => setOpen((v) => !v)}
             title={c.proxyError ?? undefined}
@@ -497,7 +501,7 @@ function ClipRow({
           ))}
         </div>
       )}
-      {isSession && open && (
+      {canTranscode && open && (
         <TranscodeProxyForm
           clip={c}
           r2Configured={r2Configured}
@@ -591,7 +595,9 @@ function TranscodeProxyForm({
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent-blue border-t-transparent" />
             {clip.proxyStatus === "queued"
               ? "waiting for the transcode worker to pick it up"
-              : "downloading blobs + encoding (a few minutes)"}
+              : clip.sessionId
+                ? "downloading blobs + encoding (a few minutes)"
+                : "downloading the source video + encoding (a few minutes)"}
           </span>
         ) : (
           <span className="text-[11px] text-ink-400">
