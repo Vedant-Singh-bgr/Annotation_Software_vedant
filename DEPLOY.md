@@ -44,7 +44,8 @@ Railway runs both containers from this one repo and provisions Postgres.
 
    | Var | Value |
    |-----|-------|
-   | `DATABASE_URL` | the Postgres URL |
+   | `DATABASE_URL` | the Postgres URL, with `?connection_limit=5` appended |
+   | `DIRECT_URL` | the direct Postgres URL (same value, minus `connection_limit`) |
    | `AUTH_SECRET` | generated above |
    | `TRANSCODE_SECRET` | generated above |
    | `R2_ACCOUNT_ID` `R2_ACCESS_KEY_ID` `R2_SECRET_ACCESS_KEY` `R2_BUCKET` | your R2 creds |
@@ -54,6 +55,27 @@ Railway runs both containers from this one repo and provisions Postgres.
    The container runs `prisma migrate deploy` on boot (creates all tables from
    `prisma/migrations/`), then starts the server. Note the public URL Railway
    assigns (e.g. `https://web-production-xxxx.up.railway.app`).
+
+   > **Connections:** the web service is one long-lived container with a single
+   > Prisma pool, so `connection_limit` (not a pooler) is what bounds Postgres
+   > connections — set it so `connection_limit × (web replicas + worker) <`
+   > Postgres `max_connections`. `DIRECT_URL` is required because `migrate deploy`
+   > runs on boot and (unlike the runtime pool) needs an unpooled session. With
+   > no pooler, `DATABASE_URL` and `DIRECT_URL` are the same URL.
+
+   ### Scaling later: PgBouncer (only when you run MANY web replicas)
+
+   A single container does not need PgBouncer — the Prisma pool already bounds
+   connections. Once you scale horizontally (each replica = its own pool), add a
+   pooler so N replicas don't multiply into N×`connection_limit` connections:
+
+   1. **New service** in the same Railway project from a PgBouncer image
+      (e.g. `edoburu/pgbouncer`), `POOL_MODE=transaction`, pointing `DATABASES`
+      at the Railway Postgres (reference `${{Postgres.DATABASE_URL}}`).
+   2. Point the web service's **`DATABASE_URL`** at the PgBouncer service's
+      internal URL and append `&pgbouncer=true`.
+   3. Leave **`DIRECT_URL`** on the direct Postgres URL — migrations bypass the
+      pooler. No code change; `directUrl` is already in the schema.
 
 4. **worker service** — same repo, build from `Dockerfile.worker`. Env vars:
 

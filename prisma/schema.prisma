@@ -22,7 +22,18 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime connection. On Railway this is a single long-lived container with one
+  // bounded Prisma pool, so point it straight at Postgres and cap the pool with
+  // ?connection_limit=N. Only switch it to a PgBouncer endpoint (with
+  // ?pgbouncer=true) if you scale to MANY web replicas — see DEPLOY.md.
+  url       = env("DATABASE_URL")
+  // Direct (unpooled) connection for migrations / db push / introspection. When
+  // DATABASE_URL points at a transaction-mode pooler, DDL and advisory locks
+  // must bypass it. Set DIRECT_URL to the direct Postgres URL. With no pooler,
+  // point it at the same URL as DATABASE_URL. `prisma generate` never connects,
+  // so the build is unaffected — but the container runs `migrate deploy` on
+  // boot, so DIRECT_URL MUST be set in Railway before deploying this change.
+  directUrl = env("DIRECT_URL")
 }
 
 // Role: PLATFORM_ADMIN | ORG_ADMIN | ANNOTATOR         (src/lib/constants.ts)
@@ -214,9 +225,14 @@ model Assignment {
   frameQuality FrameQuality[]
 
   @@unique([clipId, annotatorId])
-  @@index([annotatorId])
+  // Composite indexes for the hot filter+sort paths at scale (the review queue
+  // and the annotator/QC dashboards). The leading column still serves
+  // single-column lookups (leftmost-prefix), so these replace the plain FK
+  // indexes rather than duplicating them.
+  @@index([annotatorId, status])
   @@index([clipId])
-  @@index([reviewerId])
+  @@index([reviewerId, status])
+  @@index([status])
 }
 
 // L1 — Long-horizon task. Boundaries are frame indices (±30 frame target).
