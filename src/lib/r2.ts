@@ -180,6 +180,26 @@ export async function getObjectText(key: string): Promise<string> {
   return await res.Body!.transformToString();
 }
 
+/** Read an object's raw bytes (for binary formats like .npz). */
+export async function getObjectBytes(key: string): Promise<Uint8Array> {
+  const res = await r2Client().send(
+    new GetObjectCommand({ Bucket: process.env.R2_BUCKET!, Key: key }),
+  );
+  return await res.Body!.transformToByteArray();
+}
+
+/** Write raw bytes to R2 at `key` (overwrites). Returns the key. */
+export async function putObjectBytes(
+  key: string,
+  body: Uint8Array,
+  contentType = "application/octet-stream",
+): Promise<string> {
+  await r2Client().send(
+    new PutObjectCommand({ Bucket: process.env.R2_BUCKET!, Key: key, Body: body, ContentType: contentType }),
+  );
+  return key;
+}
+
 /** Write a JSON object to R2 at `key` (overwrites). Returns the key. */
 export async function putObjectJson(key: string, value: unknown): Promise<string> {
   await r2Client().send(
