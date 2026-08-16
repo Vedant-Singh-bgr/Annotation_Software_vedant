@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { handle, badRequest } from "@/lib/api";
+import { maybeSeedPrelabels } from "@/lib/prelabels";
 
 // Org admin assigns a clip (within their org's project) to one of their
 // annotators. Idempotent per (clip, annotator).
@@ -15,13 +16,15 @@ export async function POST(req: NextRequest) {
     if (!clipId || !annotatorId)
       badRequest("clipId and annotatorId are required.");
 
-    // Both must belong to the admin's org.
+    // Both must belong to the admin's org. Pull the R2 keys + fps too, so a
+    // pre-label file (if the admin dropped one beside the clip) can seed the
+    // annotator's tasks the moment the work is handed out.
     const clip = await prisma.clip.findFirst({
       where: {
         id: clipId,
         batch: { project: { organizationId: admin.organizationId! } },
       },
-      select: { id: true },
+      select: { id: true, r2Key: true, proxyR2Key: true, fps: true },
     });
     if (!clip) badRequest("Clip not found in your organization.");
 
@@ -61,7 +64,15 @@ export async function POST(req: NextRequest) {
     const assignment = await prisma.assignment.create({
       data: { clipId, annotatorId, reviewerId },
     });
-    return { assignment };
+
+    // Auto-seed from the clip's pre-label file if one is in R2. Non-blocking:
+    // a missing/invalid file leaves the assignment blank and reports why.
+    const prelabels = await maybeSeedPrelabels({
+      assignmentId: assignment.id,
+      annotatorId,
+      clip: { r2Key: clip!.r2Key, proxyR2Key: clip!.proxyR2Key, fps: clip!.fps },
+    });
+    return { assignment, prelabels };
   });
 }
 

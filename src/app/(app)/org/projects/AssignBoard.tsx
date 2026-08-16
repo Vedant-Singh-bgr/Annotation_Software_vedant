@@ -29,6 +29,7 @@ export default function AssignBoard({
   const [busyClip, setBusyClip] = useState<string | null>(null);
   const [pick, setPick] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [busyAssignment, setBusyAssignment] = useState<string | null>(null);
 
   // Route (or clear) the QC reviewer on an existing assignment. Kept separate
@@ -61,6 +62,7 @@ export default function AssignBoard({
     }
     setBusyClip(clipId);
     setErr(null);
+    setNote(null);
     try {
       const res = await fetch("/api/org/assignments", {
         method: "POST",
@@ -69,6 +71,17 @@ export default function AssignBoard({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
+      const p = data.prelabels;
+      if (p?.seeded) {
+        setNote(
+          `Assigned — seeded ${p.tasks} task${p.tasks === 1 ? "" : "s"}` +
+            `${p.subTasks ? ` · ${p.subTasks} sub-tasks` : ""}` +
+            `${p.qframes ? ` · ${p.qframes} quality frames` : ""} from pre-labels.`,
+        );
+      } else if (p && !p.seeded && p.reason && !/no pre-label file|already has tasks/.test(p.reason)) {
+        // Surface only genuine problems, not the ordinary "no file here" case.
+        setNote(`Assigned — pre-labels not applied: ${p.reason}`);
+      }
       router.refresh();
     } catch (e) {
       setErr((e as Error).message);
@@ -87,6 +100,12 @@ export default function AssignBoard({
       {err && (
         <p className="mb-4 rounded-lg border border-accent-red/25 bg-accent-red/5 px-3 py-2 text-sm text-accent-red">
           {err}
+        </p>
+      )}
+
+      {note && (
+        <p className="mb-4 rounded-lg border border-accent-green/25 bg-accent-green/5 px-3 py-2 text-sm text-accent-green">
+          {note}
         </p>
       )}
 
