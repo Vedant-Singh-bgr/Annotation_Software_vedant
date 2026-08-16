@@ -59,6 +59,7 @@ model User {
   tasks         Task[]
   subTasks      SubTask[]
   frameQuality  FrameQuality[]
+  handFileReviews HandFile[] @relation("HandFileReviewer")
 
   @@index([organizationId])
 }
@@ -301,4 +302,36 @@ model TaxonomyItem {
 
   @@unique([type, value, projectId])
   @@index([type])
+}
+
+// A ground-truth hand-tracking file (MANO-based .npz) reviewed as its own QC
+// pass — a separate dataset from the video clips, so it has no Assignment/Task
+// tree. Phase 1 renders the 21-joint skeleton already inside the .npz; the
+// baked MANO mesh and video overlay are deferred. reviewStatus is the QC verdict.
+model HandFile {
+  id            String  @id @default(cuid())
+  title         String
+  npzR2Key      String  @unique // the source .npz in R2
+  viewerR2Key   String? // compact parsed payload (joints+edges+confirmed+fps) in R2
+  sizeBytes     Float? // .npz bytes (Float: a long capture exceeds 2 GB)
+  fps           Float   @default(30)
+  frameCount    Int     @default(0)
+  handCount     Int     @default(2)
+  confirmedPct  Float   @default(0) // % of frame·hand slots with valid (non-NaN) tracking
+  droppedFrames Int     @default(0) // frame·hand slots that are unconfirmed/NaN
+
+  // Content identity of the source object, read from R2 at import (same pattern
+  // as Clip) so the review is pinned to the exact bytes that were viewed.
+  sourceEtag       String?
+  sourceVerifiedAt DateTime?
+
+  reviewStatus String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewNote   String    @default("")
+  reviewedById String?
+  reviewedBy   User?     @relation("HandFileReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([reviewStatus])
+  @@index([reviewedById])
 }
