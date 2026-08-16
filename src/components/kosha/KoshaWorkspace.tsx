@@ -8,6 +8,8 @@ import { Task, SubTask, FrameQuality, Taxonomies, ClipListItem, api, coverage } 
 import AnnotationsPanel from "./AnnotationsPanel";
 import QualityPanel from "./QualityPanel";
 import VideoOverlay from "./VideoOverlay";
+import HandSkeletonOverlay from "./HandSkeletonOverlay";
+import { parseHandNpz, type ParsedHands } from "@/lib/npz";
 import TimelineBoard from "./TimelineBoard";
 import ClipsSidebar from "./ClipsSidebar";
 import StatusBadge from "@/components/StatusBadge";
@@ -69,6 +71,29 @@ export default function KoshaWorkspace(props: Props) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showOverlay, setShowOverlay] = useState(true); // live label HUD on the video
+
+  // Ground-truth hand skeleton overlaid on the video, if a .hands.npz sits beside
+  // the clip in R2. Fetched + parsed once client-side; the metric 3D joints are
+  // projected per frame by HandSkeletonOverlay. Null = no file / not loaded.
+  const [hands, setHands] = useState<ParsedHands | null>(null);
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await api(`/api/assignments/${assignmentId}/hands`, "GET");
+        if (cancelled || !info?.hands?.url) return;
+        const buf = await fetch(info.hands.url).then((r) => r.arrayBuffer());
+        if (cancelled) return;
+        setHands(parseHandNpz(new Uint8Array(buf)));
+      } catch {
+        /* no skeleton — clip simply has no hand tracking */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [assignmentId]);
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
@@ -889,6 +914,9 @@ export default function KoshaWorkspace(props: Props) {
             // window is the normal workflow here, not linear watching.
             preload="auto"
           />
+          {showSkeleton && hands && (
+            <HandSkeletonOverlay hands={hands} currentFrame={currentFrame} />
+          )}
           {showOverlay && (
             <VideoOverlay tasks={tasks} quality={quality} currentFrame={currentFrame} />
           )}
@@ -904,6 +932,21 @@ export default function KoshaWorkspace(props: Props) {
           >
             ⊞
           </button>
+          {hands && (
+            <button
+              onMouseDown={keepFocus}
+              onClick={() => setShowSkeleton((v) => !v)}
+              title={
+                hands.intrinsics
+                  ? "Toggle the hand skeleton overlaid on the video"
+                  : "Hand file has no camera intrinsics — can't overlay on video"
+              }
+              disabled={!hands.intrinsics}
+              className={`btn-ghost h-9 px-2.5 text-sm disabled:opacity-40 ${showSkeleton && hands.intrinsics ? "text-accent-blue" : "text-ink-400"}`}
+            >
+              ✋
+            </button>
+          )}
           <div className="flex h-9 items-stretch divide-x divide-ink-900/10 overflow-hidden rounded-lg border border-ink-900/10">
             <button
               onMouseDown={keepFocus}

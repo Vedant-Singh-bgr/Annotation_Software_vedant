@@ -11,6 +11,20 @@ import { unzipSync } from "fflate";
 //   u8  confirmed[frameCount*handCount]
 //   f32 joints[frameCount*handCount*jointCount*3]   (NaN where unconfirmed)
 
+// Pinhole camera intrinsics + the resolution they were calibrated at. Present in
+// the ground-truth files; used to project the metric 3D joints (camera frame)
+// onto the video: u = fx·X/Z + cx, v = fy·Y/Z + cy, then scale by
+// displaySize/img. Null when the file predates them (skeleton then renders 3D
+// only, never on the video).
+export type HandIntrinsics = {
+  fx: number;
+  fy: number;
+  cx: number;
+  cy: number;
+  imgW: number;
+  imgH: number;
+};
+
 export type ParsedHands = {
   frameCount: number;
   handCount: number;
@@ -21,6 +35,7 @@ export type ParsedHands = {
   joints: Float32Array; // frameCount*handCount*jointCount*3
   confirmedPct: number;
   droppedFrames: number;
+  intrinsics: HandIntrinsics | null;
 };
 
 type Npy = { descr: string; shape: number[]; body: Uint8Array };
@@ -76,6 +91,12 @@ function asBool(n: Npy): Uint8Array {
 function scalarF32(n: Npy): number {
   return asFloat32(n)[0];
 }
+// A scalar int/float, read leniently so fx/fy/cx/cy (f4) and img_w/img_h (i4)
+// go through one path.
+function scalarNum(n: Npy): number {
+  if (n.descr === "<f4" || n.descr === "<f8") return asFloat32(n)[0];
+  return asInt(n)[0];
+}
 
 /** Parse the .npz bytes into the viewer-relevant arrays + QC signals. */
 export function parseHandNpz(npz: Uint8Array): ParsedHands {
@@ -85,6 +106,10 @@ export function parseHandNpz(npz: Uint8Array): ParsedHands {
     if (!f) throw new Error(`.npz is missing "${name}" — is this a hand-tracking file?`);
     return parseNpy(f);
   };
+  const opt = (name: string): Npy | null => {
+    const f = files[`${name}.npy`] ?? files[name];
+    return f ? parseNpy(f) : null;
+  };
 
   const k3 = get("k3d_cam_metric"); // (F, H, J, 3) f32
   const [frameCount, handCount, jointCount] = k3.shape;
@@ -93,6 +118,26 @@ export function parseHandNpz(npz: Uint8Array): ParsedHands {
   const edges = asInt(get("hand_edges")); // (E,2) -> flat pairs
   const confirmed = asBool(get("confirmed")); // (F,H)
   const fps = scalarF32(get("fps"));
+
+  // Intrinsics for the on-video overlay. All-or-nothing: if any is missing the
+  // file simply has no projection and the skeleton stays 3D-only.
+  const fx = opt("fx"),
+    fy = opt("fy"),
+    cx = opt("cx"),
+    cy = opt("cy"),
+    iw = opt("img_w"),
+    ih = opt("img_h");
+  const intrinsics =
+    fx && fy && cx && cy && iw && ih
+      ? {
+          fx: scalarNum(fx),
+          fy: scalarNum(fy),
+          cx: scalarNum(cx),
+          cy: scalarNum(cy),
+          imgW: scalarNum(iw),
+          imgH: scalarNum(ih),
+        }
+      : null;
 
   let confirmedCount = 0;
   for (let i = 0; i < confirmed.length; i++) if (confirmed[i]) confirmedCount++;
@@ -108,6 +153,7 @@ export function parseHandNpz(npz: Uint8Array): ParsedHands {
     joints,
     confirmedPct: (confirmedCount / total) * 100,
     droppedFrames: total - confirmedCount,
+    intrinsics,
   };
 }
 
