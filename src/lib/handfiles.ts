@@ -18,12 +18,21 @@ export async function captureHandFile(opts: {
   try {
     const existing = await prisma.handFile.findUnique({
       where: { npzR2Key: npzKey },
-      select: { id: true, clipId: true },
+      select: { id: true, clipId: true, videoR2Key: true },
     });
+    // The paired video beside the .npz, if present — so the overlay works even
+    // for a standalone import with no Clip row.
+    const videoKey = videoKeyForHandsKey(npzKey);
+    const videoHead = await headR2Object(videoKey);
+    const videoR2Key = videoHead.etag || videoHead.size != null ? videoKey : null;
+
     if (existing) {
-      // Backfill the clip link if we now know it and it wasn't set before.
-      if (opts.clipId && !existing.clipId) {
-        await prisma.handFile.update({ where: { id: existing.id }, data: { clipId: opts.clipId } });
+      // Backfill links we now know but that weren't set before.
+      const patch: { clipId?: string; videoR2Key?: string } = {};
+      if (opts.clipId && !existing.clipId) patch.clipId = opts.clipId;
+      if (videoR2Key && !existing.videoR2Key) patch.videoR2Key = videoR2Key;
+      if (Object.keys(patch).length) {
+        await prisma.handFile.update({ where: { id: existing.id }, data: patch });
       }
       return { ok: true, id: existing.id, alreadyExisted: true };
     }
@@ -41,6 +50,7 @@ export async function captureHandFile(opts: {
         npzR2Key: npzKey,
         viewerR2Key: viewerKey,
         clipId: opts.clipId ?? null,
+        videoR2Key,
         sizeBytes: id.size ?? bytes.length,
         fps: parsed.fps,
         frameCount: parsed.frameCount,
@@ -62,6 +72,13 @@ export async function captureHandFile(opts: {
 // with the extension swapped. e.g. …/foo.mp4 -> …/foo.hands.npz
 export function handsKeyForClipKey(clipR2Key: string): string {
   return clipR2Key.replace(/\.[^./]+$/, "") + ".hands.npz";
+}
+
+// The reverse: the video that should sit beside a hand file.
+// …/foo.hands.npz -> …/foo.mp4   (…/foo.npz -> …/foo.mp4)
+export function videoKeyForHandsKey(npzKey: string): string {
+  if (/\.hands\.npz$/i.test(npzKey)) return npzKey.replace(/\.hands\.npz$/i, ".mp4");
+  return npzKey.replace(/\.npz$/i, ".mp4");
 }
 
 // Candidate hand-file keys for a clip: beside the flat MP4, or in the proxy

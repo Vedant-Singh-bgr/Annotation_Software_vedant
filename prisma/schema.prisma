@@ -334,6 +334,11 @@ model HandFile {
   clipId String?
   clip   Clip?   @relation(fields: [clipId], references: [id], onDelete: SetNull)
 
+  // The paired video's R2 key, when a <clip>.mp4 sits beside the .npz. Lets a
+  // hand file imported standalone (no Clip row) still overlay on its video — the
+  // Hand QC importer captures this without needing an annotation project/batch.
+  videoR2Key String?
+
   reviewStatus String    @default("PENDING") // PENDING | APPROVED | REJECTED
   reviewNote   String    @default("")
   reviewedById String?

@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { handle, badRequest } from "@/lib/api";
-import { presignVideoUrl } from "@/lib/r2";
+import { headR2Object, presignVideoUrl } from "@/lib/r2";
+import { videoKeyForHandsKey } from "@/lib/handfiles";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -22,8 +23,19 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     if (!hf) badRequest("Hand file not found.");
     if (!hf!.viewerR2Key) badRequest("Viewer payload not available for this file.");
 
-    // Paired video, if this hand file came from a clip with a playable MP4.
-    const videoKey = hf!.clip?.proxyR2Key || hf!.clip?.r2Key || null;
+    // Paired video: from the linked clip, or the video key captured beside the
+    // .npz on a standalone Hand QC import.
+    let videoKey = hf!.clip?.proxyR2Key || hf!.clip?.r2Key || hf!.videoR2Key || null;
+    // Self-heal records imported before videoR2Key existed: detect the sibling
+    // .mp4 by convention and persist it, so old hand files gain the overlay.
+    if (!videoKey) {
+      const candidate = videoKeyForHandsKey(hf!.npzR2Key);
+      const h = await headR2Object(candidate);
+      if (h.etag || h.size != null) {
+        videoKey = candidate;
+        await prisma.handFile.update({ where: { id }, data: { videoR2Key: candidate } }).catch(() => {});
+      }
+    }
     const videoUrl = videoKey ? await presignVideoUrl(videoKey) : null;
 
     return {
