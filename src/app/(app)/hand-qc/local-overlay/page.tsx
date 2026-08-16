@@ -24,7 +24,7 @@ export default async function LocalVideoOverlayPage() {
         computer to see the skeleton projected onto the video — the same overlay the
         annotation workspace draws. Nothing is uploaded; it&apos;s all in your browser.
       </p>
-      <LocalVideoOverlay />
+      <LocalVideoOverlay isAdmin={user.role === "PLATFORM_ADMIN"} />
     </div>
   );
 }
