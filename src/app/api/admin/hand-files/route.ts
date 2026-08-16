@@ -54,9 +54,15 @@ export async function POST(req: NextRequest) {
     if (keys.length === 0) badRequest("Select at least one .npz to import.");
     if (!isR2Configured()) badRequest("R2 is not configured.");
 
+    const batchId = body?.batchId ? String(body.batchId) : null;
+    if (batchId) {
+      const batch = await prisma.handBatch.findUnique({ where: { id: batchId }, select: { id: true } });
+      if (!batch) badRequest("Batch not found.");
+    }
+
     const results: { key: string; ok: boolean; error?: string }[] = [];
     for (const key of keys) {
-      const r = await captureHandFile({ npzKey: key });
+      const r = await captureHandFile({ npzKey: key, batchId });
       if (r.ok && r.alreadyExisted) results.push({ key, ok: false, error: "already imported" });
       else if (r.ok) results.push({ key, ok: true });
       else results.push({ key, ok: false, error: r.error });

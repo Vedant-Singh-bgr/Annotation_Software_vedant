@@ -12,6 +12,7 @@ import { parseHandNpz, packViewer } from "@/lib/npz";
 export async function captureHandFile(opts: {
   npzKey: string;
   clipId?: string | null;
+  batchId?: string | null;
   title?: string;
 }): Promise<{ ok: true; id: string; alreadyExisted: boolean } | { ok: false; error: string }> {
   const { npzKey } = opts;
@@ -50,6 +51,7 @@ export async function captureHandFile(opts: {
         npzR2Key: npzKey,
         viewerR2Key: viewerKey,
         clipId: opts.clipId ?? null,
+        batchId: opts.batchId ?? null,
         videoR2Key,
         sizeBytes: id.size ?? bytes.length,
         fps: parsed.fps,

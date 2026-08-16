@@ -15,9 +15,11 @@ type File = {
   droppedFrames: number;
   reviewerId: string | null;
   reviewerName: string | null;
+  batchName: string | null;
 };
 
 type Reviewer = { id: string; name: string };
+type Batch = { id: string; name: string; fileCount: number };
 
 async function api(url: string, method: string, body?: unknown) {
   const res = await fetch(url, {
@@ -39,6 +41,8 @@ export default function HandQcBoard({
   isAdmin,
   canAssign,
   reviewers,
+  activeBatch,
+  batches,
 }: {
   files: File[];
   status: string;
@@ -46,8 +50,11 @@ export default function HandQcBoard({
   isAdmin: boolean;
   canAssign: boolean;
   reviewers: Reviewer[];
+  activeBatch: string;
+  batches: Batch[];
 }) {
   const router = useRouter();
+  const batchQuery = activeBatch !== "ALL" ? `&batch=${activeBatch}` : "";
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reviewerId, setReviewerId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -115,13 +122,13 @@ export default function HandQcBoard({
         video when a clip is paired), then approve or reject.
       </p>
 
-      {isAdmin && <ImportPanel />}
+      {isAdmin && <ImportPanel batches={batches} />}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <Link
             key={f}
-            href={`/hand-qc?status=${f}`}
+            href={`/hand-qc?status=${f}${batchQuery}`}
             className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors duration-150 ${
               status === f
                 ? "border-accent-blue/40 bg-accent-blue/10 text-accent-blue"
@@ -131,6 +138,20 @@ export default function HandQcBoard({
             {f.toLowerCase()} ({counts[f] ?? 0})
           </Link>
         ))}
+        {batches.length > 0 && (
+          <select
+            className="input ml-auto h-7 w-56 text-xs"
+            value={activeBatch}
+            onChange={(e) => router.push(`/hand-qc?status=${status}${e.target.value !== "ALL" ? `&batch=${e.target.value}` : ""}`)}
+          >
+            <option value="ALL">All batches</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.fileCount})
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Assign toolbar — route selected files to a QC reviewer, in batches. */}
@@ -199,6 +220,11 @@ export default function HandQcBoard({
                 <span className="min-w-0 flex-1 truncate text-ink-800" title={f.title}>
                   {f.title}
                 </span>
+                {f.batchName && (
+                  <span className="shrink-0 rounded-full bg-ink-900/5 px-2 py-0.5 text-[11px] text-ink-500" title="Batch">
+                    {f.batchName}
+                  </span>
+                )}
                 {f.reviewerName && (
                   <span className="shrink-0 rounded-full bg-accent-blue/10 px-2 py-0.5 text-[11px] text-accent-blue" title="Routed reviewer">
                     → {f.reviewerName}
@@ -225,8 +251,9 @@ export default function HandQcBoard({
   );
 }
 
-// Platform-admin: list .npz in the R2 hands prefix and import selected ones.
-function ImportPanel() {
+// Platform-admin: list .npz in the R2 hands prefix and import selected ones,
+// optionally into a batch (existing or newly created).
+function ImportPanel({ batches }: { batches: Batch[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -234,6 +261,8 @@ function ImportPanel() {
   const [files, setFiles] = useState<{ key: string; size: number; imported: boolean }[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<string | null>(null);
+  const [batchId, setBatchId] = useState<string>(""); // "" = no batch, "__new__" = create
+  const [newBatch, setNewBatch] = useState("");
 
   const importable = (files ?? []).filter((f) => !f.imported);
   const allPicked = importable.length > 0 && importable.every((f) => picked.has(f.key));
@@ -261,9 +290,19 @@ function ImportPanel() {
     setLoading(true);
     setMsg(null);
     try {
-      const res = await api("/api/admin/hand-files", "POST", { keys: [...picked] });
+      // Resolve the target batch: create one first if the admin typed a new name.
+      let targetBatch: string | null = batchId && batchId !== "__new__" ? batchId : null;
+      if (batchId === "__new__" && newBatch.trim()) {
+        const created = await api("/api/admin/hand-batches", "POST", { name: newBatch.trim() });
+        targetBatch = created.batch.id;
+      }
+      const res = await api("/api/admin/hand-files", "POST", {
+        keys: [...picked],
+        batchId: targetBatch,
+      });
       setMsg(`${res.imported} imported${res.skipped ? ` · ${res.skipped} skipped` : ""}`);
       setPicked(new Set());
+      setNewBatch("");
       await list();
       router.refresh();
     } catch (e) {
@@ -334,13 +373,37 @@ function ImportPanel() {
                   </li>
                 ))}
               </ul>
-              <button
-                onClick={importPicked}
-                disabled={loading || picked.size === 0}
-                className="rounded-lg border border-accent-blue/40 bg-accent-blue/5 px-2.5 py-1 text-xs text-accent-blue transition-colors duration-150 hover:bg-accent-blue/10 disabled:opacity-40"
-              >
-                {loading ? "Importing…" : `Import (${picked.size})`}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-500">Into batch:</span>
+                <select
+                  className="input h-8 w-44 text-xs"
+                  value={batchId}
+                  onChange={(e) => setBatchId(e.target.value)}
+                >
+                  <option value="">No batch</option>
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                  <option value="__new__">+ New batch…</option>
+                </select>
+                {batchId === "__new__" && (
+                  <input
+                    className="input h-8 w-40 text-xs"
+                    placeholder="New batch name"
+                    value={newBatch}
+                    onChange={(e) => setNewBatch(e.target.value)}
+                  />
+                )}
+                <button
+                  onClick={importPicked}
+                  disabled={loading || picked.size === 0 || (batchId === "__new__" && !newBatch.trim())}
+                  className="rounded-lg border border-accent-blue/40 bg-accent-blue/5 px-2.5 py-1 text-xs text-accent-blue transition-colors duration-150 hover:bg-accent-blue/10 disabled:opacity-40"
+                >
+                  {loading ? "Importing…" : `Import (${picked.size})`}
+                </button>
+              </div>
             </>
           )}
           {files && files.length === 0 && (

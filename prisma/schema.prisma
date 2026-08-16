@@ -335,6 +335,11 @@ model HandFile {
   clipId String?
   clip   Clip?   @relation(fields: [clipId], references: [id], onDelete: SetNull)
 
+  // Optional grouping for organisation, the hand-QC analogue of a clip Batch.
+  // SetNull: deleting a batch orphans its files rather than destroying them.
+  batchId String?
+  batch   HandBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
   // The paired video's R2 key, when a <clip>.mp4 sits beside the .npz. Lets a
   // hand file imported standalone (no Clip row) still overlay on its video — the
   // Hand QC importer captures this without needing an annotation project/batch.
@@ -358,4 +363,17 @@ model HandFile {
   @@index([reviewedById])
   @@index([clipId])
   @@index([reviewerId, reviewStatus])
+  @@index([batchId])
+}
+
+// A named group of hand files, for organising the QC queue — the hand-QC
+// analogue of a clip Batch. Standalone (not tied to an annotation Project), since
+// hand tracking is a separate, platform-level dataset.
+model HandBatch {
+  id        String     @id @default(cuid())
+  name      String
+  createdAt DateTime   @default(now())
+  files     HandFile[]
+
+  @@index([createdAt])
 }
