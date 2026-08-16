@@ -43,12 +43,20 @@ export default function HandQcBoard({
     <div>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-serif text-2xl font-medium text-ink-900">Hand QC</h1>
-        <Link
-          href="/hand-qc/local"
-          className="rounded-lg border border-ink-900/15 px-2.5 py-1 text-xs text-ink-600 transition-colors duration-150 hover:border-accent-blue/60 hover:text-ink-900"
-        >
-          Preview a local .npz ↗
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/hand-qc/local-overlay"
+            className="rounded-lg border border-ink-900/15 px-2.5 py-1 text-xs text-ink-600 transition-colors duration-150 hover:border-accent-blue/60 hover:text-ink-900"
+          >
+            Overlay a local video ↗
+          </Link>
+          <Link
+            href="/hand-qc/local"
+            className="rounded-lg border border-ink-900/15 px-2.5 py-1 text-xs text-ink-600 transition-colors duration-150 hover:border-accent-blue/60 hover:text-ink-900"
+          >
+            Preview a local .npz ↗
+          </Link>
+        </div>
       </div>
       <p className="mb-5 max-w-2xl text-sm text-ink-500">
         Ground-truth hand-tracking files. Open one to inspect the 3D skeleton, then
