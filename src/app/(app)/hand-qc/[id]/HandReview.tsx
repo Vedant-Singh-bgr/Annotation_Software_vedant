@@ -43,6 +43,9 @@ export default function HandReview({ id }: { id: string }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  // When a video is paired, let the reviewer flip between the on-video overlay
+  // and the free-orbit 3D skeleton — same camera-frame joints, two views.
+  const [view, setView] = useState<"video" | "3d">("video");
 
   useEffect(() => {
     let cancelled = false;
@@ -100,8 +103,26 @@ export default function HandReview({ id }: { id: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
       <div>
-        {video ? (
+        {video && (
+          <div className="mb-2 inline-flex overflow-hidden rounded-lg border border-ink-900/15 text-xs">
+            <button
+              onClick={() => setView("video")}
+              className={`px-3 py-1 transition-colors duration-150 ${view === "video" ? "bg-accent-blue/10 text-accent-blue" : "text-ink-500 hover:text-ink-900"}`}
+            >
+              On video
+            </button>
+            <button
+              onClick={() => setView("3d")}
+              className={`border-l border-ink-900/15 px-3 py-1 transition-colors duration-150 ${view === "3d" ? "bg-accent-blue/10 text-accent-blue" : "text-ink-500 hover:text-ink-900"}`}
+            >
+              3D skeleton
+            </button>
+          </div>
+        )}
+        {video && view === "video" ? (
           <HandVideoPlayer videoUrl={video.url} hands={video.hands} />
+        ) : video ? (
+          <HandSkeletonCanvas hands={video.hands} />
         ) : (
           <HandSkeletonCanvas hands={hands} />
         )}
