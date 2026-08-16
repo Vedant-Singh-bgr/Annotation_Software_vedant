@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import HandSkeletonCanvas, { HandsData } from "../HandSkeletonCanvas";
+import HandVideoPlayer from "@/components/kosha/HandVideoPlayer";
+import { parseHandNpz, type ParsedHands } from "@/lib/npz";
 
 // Unpack the compact viewer binary written by packViewer() in src/lib/npz.ts.
 function unpackViewer(buf: ArrayBuffer): HandsData {
@@ -31,7 +33,11 @@ type Meta = {
 
 export default function HandReview({ id }: { id: string }) {
   const router = useRouter();
+  // 3D-viewer data (unpacked viewer.bin) when there's no paired video…
   const [hands, setHands] = useState<HandsData | null>(null);
+  // …or the full parsed .npz + video URL when the hand file came from a clip,
+  // so the skeleton can be overlaid on the video.
+  const [video, setVideo] = useState<{ url: string; hands: ParsedHands } | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -47,9 +53,17 @@ export default function HandReview({ id }: { id: string }) {
         if (cancelled) return;
         setMeta(info);
         setNote(info.reviewNote ?? "");
-        const buf = await fetch(info.url).then((r) => r.arrayBuffer());
-        if (cancelled) return;
-        setHands(unpackViewer(buf));
+        if (info.videoUrl && info.npzUrl) {
+          // Paired clip: parse the .npz (for intrinsics) and overlay on the video.
+          const buf = await fetch(info.npzUrl).then((r) => r.arrayBuffer());
+          if (cancelled) return;
+          setVideo({ url: info.videoUrl, hands: parseHandNpz(new Uint8Array(buf)) });
+        } else {
+          // Standalone: 3D skeleton from the packed viewer payload.
+          const buf = await fetch(info.url).then((r) => r.arrayBuffer());
+          if (cancelled) return;
+          setHands(unpackViewer(buf));
+        }
       } catch (e) {
         if (!cancelled) setLoadErr((e as Error).message);
       }
@@ -86,7 +100,11 @@ export default function HandReview({ id }: { id: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
       <div>
-        <HandSkeletonCanvas hands={hands} />
+        {video ? (
+          <HandVideoPlayer videoUrl={video.url} hands={video.hands} />
+        ) : (
+          <HandSkeletonCanvas hands={hands} />
+        )}
         {loadErr && <p className="mt-2 text-sm text-accent-red">{loadErr}</p>}
       </div>
 

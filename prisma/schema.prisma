@@ -143,6 +143,7 @@ model Clip {
 
   assignments Assignment[]
   segments    ClipSegment[]
+  handFiles   HandFile[]
 
   @@unique([batchId, r2Key])
   @@unique([batchId, sessionId])
@@ -325,6 +326,14 @@ model HandFile {
   sourceEtag       String?
   sourceVerifiedAt DateTime?
 
+  // The clip this hand file was captured from, when it sits beside a clip's MP4
+  // in R2 (…/<clip>.mp4 + …/<clip>.hands.npz). Lets the Hand QC review page load
+  // the paired video and overlay the skeleton on it. Null for hand files imported
+  // standalone from the hands/ prefix. SetNull, not Cascade: removing a clip must
+  // not delete the QC verdict on its hand tracking.
+  clipId String?
+  clip   Clip?   @relation(fields: [clipId], references: [id], onDelete: SetNull)
+
   reviewStatus String    @default("PENDING") // PENDING | APPROVED | REJECTED
   reviewNote   String    @default("")
   reviewedById String?
@@ -334,4 +343,5 @@ model HandFile {
 
   @@index([reviewStatus])
   @@index([reviewedById])
+  @@index([clipId])
 }

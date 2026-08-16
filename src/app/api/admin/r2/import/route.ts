@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { handle, badRequest } from "@/lib/api";
 import { headR2Object, isR2Configured } from "@/lib/r2";
+import { captureHandFile, handsKeyForClipKey } from "@/lib/handfiles";
 
 type IncomingClip = { key: string; title?: string; size?: number };
 
@@ -67,9 +68,30 @@ export async function POST(req: NextRequest) {
       await prisma.clip.createMany({ data: toCreate });
     }
 
+    // Auto-capture the hand tracking that sits beside each imported clip
+    // (…/<clip>.mp4 -> …/<clip>.hands.npz), so importing the clip folder is the
+    // single step: the .npz becomes a Hand QC file linked to the clip, and its
+    // review can overlay the skeleton on this video. Best-effort per clip.
+    let handsCaptured = 0;
+    if (isR2Configured() && toCreate.length > 0) {
+      const created = await prisma.clip.findMany({
+        where: { batchId, r2Key: { in: toCreate.map((c) => c.r2Key) } },
+        select: { id: true, r2Key: true, title: true },
+      });
+      for (const c of created) {
+        if (!c.r2Key) continue;
+        const npzKey = handsKeyForClipKey(c.r2Key);
+        const id = await headR2Object(npzKey); // never throws; nulls = missing
+        if (!(id.etag || id.size != null)) continue;
+        const r = await captureHandFile({ npzKey, clipId: c.id, title: c.title });
+        if (r.ok) handsCaptured++;
+      }
+    }
+
     return {
       imported: toCreate.length,
       skipped: keys.length - toCreate.length,
+      handsCaptured,
     };
   });
 }

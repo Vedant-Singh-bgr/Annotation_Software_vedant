@@ -1280,7 +1280,10 @@ function R2Browser({
         .filter((o) => selected.has(o.key))
         .map((o) => ({ key: o.key, size: o.size }));
       const res = await api("/api/admin/r2/import", "POST", { batchId, clips });
-      alert(`Imported ${res.imported}, skipped ${res.skipped} (already present).`);
+      alert(
+        `Imported ${res.imported}, skipped ${res.skipped} (already present).` +
+          (res.handsCaptured ? `\nHand QC: captured ${res.handsCaptured} .hands.npz found beside the clips.` : ""),
+      );
       onImported();
     } catch (e) {
       setErr((e as Error).message);

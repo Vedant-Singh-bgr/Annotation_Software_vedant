@@ -2,14 +2,8 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { handle, badRequest } from "@/lib/api";
-import {
-  isR2Configured,
-  listR2Objects,
-  getObjectBytes,
-  putObjectBytes,
-  headR2Object,
-} from "@/lib/r2";
-import { parseHandNpz, packViewer } from "@/lib/npz";
+import { isR2Configured, listR2Objects } from "@/lib/r2";
+import { captureHandFile } from "@/lib/handfiles";
 
 // Hand-tracking .npz files are imported from an R2 prefix (default `hands/`),
 // exactly like clip folders. Each import parses the .npz once, stores a compact
@@ -60,44 +54,12 @@ export async function POST(req: NextRequest) {
     if (keys.length === 0) badRequest("Select at least one .npz to import.");
     if (!isR2Configured()) badRequest("R2 is not configured.");
 
-    const existing = await prisma.handFile.findMany({
-      where: { npzR2Key: { in: keys } },
-      select: { npzR2Key: true },
-    });
-    const skip = new Set(existing.map((e) => e.npzR2Key));
-
     const results: { key: string; ok: boolean; error?: string }[] = [];
     for (const key of keys) {
-      if (skip.has(key)) {
-        results.push({ key, ok: false, error: "already imported" });
-        continue;
-      }
-      try {
-        const bytes = await getObjectBytes(key);
-        const parsed = parseHandNpz(bytes);
-        const viewerKey = key.replace(/\.npz$/i, "") + ".viewer.bin";
-        await putObjectBytes(viewerKey, packViewer(parsed));
-        const id = await headR2Object(key);
-        const title = (key.split("/").pop() || key).replace(/\.npz$/i, "");
-        await prisma.handFile.create({
-          data: {
-            title,
-            npzR2Key: key,
-            viewerR2Key: viewerKey,
-            sizeBytes: id.size ?? bytes.length,
-            fps: parsed.fps,
-            frameCount: parsed.frameCount,
-            handCount: parsed.handCount,
-            confirmedPct: parsed.confirmedPct,
-            droppedFrames: parsed.droppedFrames,
-            sourceEtag: id.etag,
-            sourceVerifiedAt: new Date(),
-          },
-        });
-        results.push({ key, ok: true });
-      } catch (e) {
-        results.push({ key, ok: false, error: (e as Error).message });
-      }
+      const r = await captureHandFile({ npzKey: key });
+      if (r.ok && r.alreadyExisted) results.push({ key, ok: false, error: "already imported" });
+      else if (r.ok) results.push({ key, ok: true });
+      else results.push({ key, ok: false, error: r.error });
     }
     const imported = results.filter((r) => r.ok).length;
     return { imported, skipped: results.length - imported, results };
