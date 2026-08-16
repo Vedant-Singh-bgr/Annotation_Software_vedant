@@ -259,6 +259,7 @@ function ImportPanel({ batches }: { batches: Batch[] }) {
   const [loading, setLoading] = useState(false);
   const [prefix, setPrefix] = useState("");
   const [files, setFiles] = useState<{ key: string; size: number; imported: boolean }[] | null>(null);
+  const [folders, setFolders] = useState<string[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string>(""); // "" = no batch, "__new__" = create
@@ -267,19 +268,33 @@ function ImportPanel({ batches }: { batches: Batch[] }) {
   const importable = (files ?? []).filter((f) => !f.imported);
   const allPicked = importable.length > 0 && importable.every((f) => picked.has(f.key));
 
-  async function list() {
+  // List one folder level. `p` defaults to the current prefix; folder clicks pass
+  // the target so navigation isn't a step behind the state update.
+  async function list(p: string = prefix) {
     setLoading(true);
     setMsg(null);
     try {
-      const res = await api(`/api/admin/hand-files${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ""}`, "GET");
+      const res = await api(`/api/admin/hand-files${p ? `?prefix=${encodeURIComponent(p)}` : ""}`, "GET");
       if (!res.configured) setMsg("R2 is not configured.");
       setFiles(res.files ?? []);
+      setFolders(res.prefixes ?? []);
       setPicked(new Set());
+      if (res.truncated) setMsg("Showing the first 1000 entries — narrow with a prefix if needed.");
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
       setLoading(false);
     }
+  }
+
+  function openFolder(p: string) {
+    setPrefix(p);
+    list(p);
+  }
+  function goUp() {
+    const up = prefix.replace(/[^/]+\/$/, "");
+    setPrefix(up);
+    list(up);
   }
 
   function toggleAll() {
@@ -328,15 +343,41 @@ function ImportPanel({ batches }: { batches: Batch[] }) {
           <div className="flex items-center gap-2">
             <input
               className="input h-8 flex-1 text-xs"
-              placeholder="R2 prefix (default hands/)"
+              placeholder="R2 prefix (blank = bucket root)"
               value={prefix}
               onChange={(e) => setPrefix(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && list()}
             />
-            <button className="btn-ghost h-8 px-2.5 text-xs" onClick={list} disabled={loading}>
+            <button className="btn-ghost h-8 px-2.5 text-xs" onClick={() => list()} disabled={loading}>
               {loading ? "…" : "List"}
             </button>
           </div>
+
+          {/* Folder browser: current path + subfolders to drill into. */}
+          {files && (
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 text-[11px] text-ink-400">
+                <span className="font-mono">/{prefix}</span>
+                {prefix && (
+                  <button onClick={goUp} className="text-accent-blue hover:underline">
+                    ⬑ up
+                  </button>
+                )}
+              </div>
+              {folders.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => openFolder(p)}
+                  className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs text-ink-700 hover:bg-ink-900/[0.04]"
+                  title={p}
+                >
+                  <span className="text-ink-400">📁</span>
+                  <span className="min-w-0 flex-1 truncate font-mono">{p.slice(prefix.length)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {files && files.length > 0 && (
             <>
               <label className="flex items-center gap-1.5 text-xs text-ink-600">
@@ -406,8 +447,8 @@ function ImportPanel({ batches }: { batches: Batch[] }) {
               </div>
             </>
           )}
-          {files && files.length === 0 && (
-            <p className="text-xs text-ink-400">No .npz found under that prefix.</p>
+          {files && files.length === 0 && folders.length === 0 && (
+            <p className="text-xs text-ink-400">Nothing here — try a different prefix or go up.</p>
           )}
           {msg && <p className="text-xs text-ink-500">{msg}</p>}
         </div>

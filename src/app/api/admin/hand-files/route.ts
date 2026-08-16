@@ -5,39 +5,35 @@ import { handle, badRequest } from "@/lib/api";
 import { isR2Configured, listR2Objects } from "@/lib/r2";
 import { captureHandFile } from "@/lib/handfiles";
 
-// Hand-tracking .npz files are imported from an R2 prefix (default `hands/`),
-// exactly like clip folders. Each import parses the .npz once, stores a compact
-// viewer payload beside it, and records the QC signals on a HandFile row.
-const HANDS_PREFIX = process.env.HANDS_R2_PREFIX || "hands/";
+// Hand-tracking .npz files are imported from the R2 bucket. Listing is
+// folder-style (delimiter "/") so the admin can browse subfolders instead of
+// guessing a prefix. Each import parses the .npz once, stores a compact viewer
+// payload beside it, and records the QC signals on a HandFile row.
 const NPZ_RE = /\.npz$/i;
 
-async function listNpz(prefix: string) {
-  const out: { key: string; size: number }[] = [];
-  let token: string | undefined;
-  do {
-    const page = await listR2Objects({ prefix, token, maxKeys: 1000 });
-    for (const o of page.objects) if (NPZ_RE.test(o.key)) out.push({ key: o.key, size: o.size });
-    token = page.nextToken ?? undefined;
-  } while (token);
-  return out;
-}
-
-// GET ?prefix= — list .npz under the hands prefix, marking which are imported.
+// GET ?prefix= — browse one folder level: its subfolders + the .npz files
+// directly under it (marking which are already imported). Empty prefix = root.
 export async function GET(req: NextRequest) {
   return handle(async () => {
     await requireRole("PLATFORM_ADMIN");
-    const prefix = new URL(req.url).searchParams.get("prefix") || HANDS_PREFIX;
-    if (!isR2Configured()) return { configured: false, prefix, files: [] };
-    const objs = await listNpz(prefix);
+    const prefix = new URL(req.url).searchParams.get("prefix") || "";
+    if (!isR2Configured()) return { configured: false, prefix, prefixes: [], files: [] };
+
+    const listing = await listR2Objects({ prefix, maxKeys: 1000 });
+    const npz = listing.objects.filter((o) => NPZ_RE.test(o.key));
     const existing = await prisma.handFile.findMany({
-      where: { npzR2Key: { in: objs.map((o) => o.key) } },
+      where: { npzR2Key: { in: npz.map((o) => o.key) } },
       select: { npzR2Key: true },
     });
     const imported = new Set(existing.map((e) => e.npzR2Key));
     return {
       configured: true,
       prefix,
-      files: objs.map((o) => ({ ...o, imported: imported.has(o.key) })),
+      // Subfolders to drill into.
+      prefixes: listing.prefixes,
+      // .npz directly at this level.
+      files: npz.map((o) => ({ key: o.key, size: o.size, imported: imported.has(o.key) })),
+      truncated: listing.nextToken != null,
     };
   });
 }
