@@ -27,8 +27,11 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     const videoUrl = videoKey ? await presignVideoUrl(videoKey) : null;
 
     return {
-      url: await presignVideoUrl(hf!.viewerR2Key!),
-      npzUrl: await presignVideoUrl(hf!.npzR2Key),
+      // Bytes are proxied same-origin (browser can't fetch presigned R2 without
+      // bucket CORS). The video plays fine from a presigned URL — media elements
+      // don't enforce CORS for playback.
+      url: `/api/hand-files/${id}/data?kind=viewer`,
+      npzUrl: `/api/hand-files/${id}/data?kind=npz`,
       videoUrl,
       title: hf!.title,
       fps: hf!.fps,

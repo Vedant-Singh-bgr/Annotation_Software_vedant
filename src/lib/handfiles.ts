@@ -63,3 +63,30 @@ export async function captureHandFile(opts: {
 export function handsKeyForClipKey(clipR2Key: string): string {
   return clipR2Key.replace(/\.[^./]+$/, "") + ".hands.npz";
 }
+
+// Candidate hand-file keys for a clip: beside the flat MP4, or in the proxy
+// folder for session clips.
+export function clipHandsKeyCandidates(clip: {
+  r2Key?: string | null;
+  proxyR2Key?: string | null;
+}): string[] {
+  const out: string[] = [];
+  if (clip.r2Key) out.push(handsKeyForClipKey(clip.r2Key));
+  if (clip.proxyR2Key) {
+    const dir = clip.proxyR2Key.replace(/\/[^/]*$/, "");
+    if (dir) out.push(`${dir}/hands.npz`);
+  }
+  return out;
+}
+
+// The first candidate that actually exists in R2, or null. HEAD never throws.
+export async function resolveClipHandsKey(clip: {
+  r2Key?: string | null;
+  proxyR2Key?: string | null;
+}): Promise<string | null> {
+  for (const key of clipHandsKeyCandidates(clip)) {
+    const id = await headR2Object(key);
+    if (id.etag || id.size != null) return key;
+  }
+  return null;
+}
