@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
-import { handle, badRequest } from "@/lib/api";
+import { handle, badRequest, forbidden } from "@/lib/api";
 import { isR2Configured, putObjectJson } from "@/lib/r2";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -29,6 +29,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     const hf = await prisma.handFile.findUnique({ where: { id } });
     if (!hf) badRequest("Hand file not found.");
+    // A QC reviewer may only act on files routed to them; admins are unrestricted.
+    if (user.role === "QC" && hf!.reviewerId && hf!.reviewerId !== user.id)
+      forbidden("This hand file has not been routed to you for review.");
 
     const reviewStatus = action === "approve" ? "APPROVED" : "REJECTED";
     const reviewedAt = new Date();

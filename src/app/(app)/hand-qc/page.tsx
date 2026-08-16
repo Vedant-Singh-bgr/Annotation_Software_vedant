@@ -16,9 +16,13 @@ export default async function HandQcPage({ searchParams }: Props) {
 
   const raw = (await searchParams).status?.toUpperCase();
   const status = (FILTERS as readonly string[]).includes(raw ?? "") ? raw! : "PENDING";
-  const where = status === "ALL" ? {} : { reviewStatus: status };
 
-  const [files, grouped] = await Promise.all([
+  const canAssign = user.role === "PLATFORM_ADMIN" || user.role === "ORG_ADMIN";
+  // A QC reviewer sees only files routed to them; admins see everything.
+  const scope = user.role === "QC" ? { reviewerId: user.id } : {};
+  const where = { ...scope, ...(status === "ALL" ? {} : { reviewStatus: status }) };
+
+  const [files, grouped, reviewers] = await Promise.all([
     prisma.handFile.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -31,10 +35,17 @@ export default async function HandQcPage({ searchParams }: Props) {
         fps: true,
         confirmedPct: true,
         droppedFrames: true,
-        createdAt: true,
+        reviewer: { select: { id: true, name: true } },
       },
     }),
-    prisma.handFile.groupBy({ by: ["reviewStatus"], _count: true }),
+    prisma.handFile.groupBy({ by: ["reviewStatus"], where: scope, _count: true }),
+    canAssign
+      ? prisma.user.findMany({
+          where: { role: "QC", active: true },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const counts = Object.fromEntries(grouped.map((g) => [g.reviewStatus, g._count]));
@@ -45,6 +56,8 @@ export default async function HandQcPage({ searchParams }: Props) {
       status={status}
       counts={{ ...counts, ALL: total }}
       isAdmin={user.role === "PLATFORM_ADMIN"}
+      canAssign={canAssign}
+      reviewers={reviewers}
       files={files.map((f) => ({
         id: f.id,
         title: f.title,
@@ -53,6 +66,8 @@ export default async function HandQcPage({ searchParams }: Props) {
         durationSec: f.fps > 0 ? f.frameCount / f.fps : 0,
         confirmedPct: f.confirmedPct,
         droppedFrames: f.droppedFrames,
+        reviewerId: f.reviewer?.id ?? null,
+        reviewerName: f.reviewer?.name ?? null,
       }))}
     />
   );

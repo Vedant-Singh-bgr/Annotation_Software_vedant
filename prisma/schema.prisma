@@ -60,6 +60,7 @@ model User {
   subTasks      SubTask[]
   frameQuality  FrameQuality[]
   handFileReviews HandFile[] @relation("HandFileReviewer")
+  handFileRouted  HandFile[] @relation("HandFileRoutedReviewer")
 
   @@index([organizationId])
 }
@@ -341,6 +342,13 @@ model HandFile {
 
   reviewStatus String    @default("PENDING") // PENDING | APPROVED | REJECTED
   reviewNote   String    @default("")
+
+  // QC routing: the reviewer this file is assigned to (nullable = unrouted, any
+  // reviewer can pick it up). Mirrors Assignment.reviewerId. SetNull so removing
+  // a reviewer's user row doesn't delete the hand file.
+  reviewerId String?
+  reviewer   User?   @relation("HandFileRoutedReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
   reviewedById String?
   reviewedBy   User?     @relation("HandFileReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   reviewedAt   DateTime?
@@ -349,4 +357,5 @@ model HandFile {
   @@index([reviewStatus])
   @@index([reviewedById])
   @@index([clipId])
+  @@index([reviewerId, reviewStatus])
 }
