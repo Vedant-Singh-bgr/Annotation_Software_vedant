@@ -15,7 +15,11 @@ import { validateSubmission, VTask } from "@/lib/validate";
 // Pre-labels cover L1 tasks + L2 sub-tasks only. Frame quality (Q) is a manual
 // annotator judgment and is never pre-seeded — a Q block in the file is ignored.
 
-export const PRELABEL_SCHEMA = "kosha-annotations-v1";
+// Self-identifying tag for the file. Optional in the file, but if present it
+// must start with this — a guard so an unrelated JSON dropped at the pre-label
+// key can't be seeded as tasks by accident. Versioned so the shape can evolve.
+export const PRELABEL_SCHEMA = "kosha-prelabels-v1";
+const PRELABEL_SCHEMA_PREFIX = "kosha-prelabels";
 
 // Mirrors AnnotationsPanel: a taxonomy value not on the approved list is a
 // "custom" value that must be vetted, flagged with this so QC sees it. Seeding a
@@ -110,6 +114,11 @@ type Parsed = { tasks: ParsedTask[] };
 export function parsePrelabels(raw: unknown): Parsed {
   if (!raw || typeof raw !== "object") throw new Error("not a JSON object");
   const doc = raw as Record<string, unknown>;
+  // Optional self-check: if the file names a schema, it must be ours. `clip` and
+  // any other header fields are ignored — the clip is identified by the file's
+  // R2 location, not its contents.
+  if (typeof doc.schema === "string" && !doc.schema.startsWith(PRELABEL_SCHEMA_PREFIX))
+    throw new Error(`unexpected schema "${doc.schema}" — expected ${PRELABEL_SCHEMA_PREFIX}-*`);
   const L1 = Array.isArray(doc.L1_tasks) ? doc.L1_tasks : [];
   const L2 = Array.isArray(doc.L2_subtasks) ? doc.L2_subtasks : [];
   // Q_frame_quality is intentionally ignored: frame quality is a manual
