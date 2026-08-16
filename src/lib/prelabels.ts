@@ -14,6 +14,42 @@ import { validateSubmission, VTask } from "@/lib/validate";
 
 export const PRELABEL_SCHEMA = "kosha-annotations-v1";
 
+// Mirrors AnnotationsPanel: a taxonomy value not on the approved list is a
+// "custom" value that must be vetted, flagged with this so QC sees it. Seeding a
+// pre-label with off-list venue/job values raises it exactly as typing one would.
+const TAXONOMY_REVIEW_FLAG = "needs_taxonomy_review";
+
+type ApprovedTaxonomy = { VENUE_L2: Set<string>; VENUE_L3: Set<string>; JOB: Set<string> };
+
+// The approved, global taxonomy (projectId null + active) — the same set the
+// annotate page loads to decide what counts as on-list.
+async function loadApprovedTaxonomy(): Promise<ApprovedTaxonomy> {
+  const items = await prisma.taxonomyItem.findMany({
+    where: { projectId: null, active: true },
+    select: { type: true, value: true },
+  });
+  const pick = (type: string) =>
+    new Set(items.filter((i) => i.type === type).map((i) => i.value));
+  return { VENUE_L2: pick("VENUE_L2"), VENUE_L3: pick("VENUE_L3"), JOB: pick("JOB") };
+}
+
+// Add needs_taxonomy_review to a task's flags iff any taxonomy field is off-list.
+function withTaxonomyFlag(flagsJson: string, t: ParsedTask, tax: ApprovedTaxonomy): string {
+  let flags: string[] = [];
+  try {
+    const a = JSON.parse(flagsJson);
+    if (Array.isArray(a)) flags = a.map(String);
+  } catch {
+    /* keep [] */
+  }
+  const off = (v: string, set: Set<string>) => !!v && !set.has(v);
+  const anyCustom =
+    off(t.job, tax.JOB) || off(t.venueL2, tax.VENUE_L2) || off(t.venueL3, tax.VENUE_L3);
+  const has = flags.includes(TAXONOMY_REVIEW_FLAG);
+  if (anyCustom && !has) flags = [...flags, TAXONOMY_REVIEW_FLAG];
+  return JSON.stringify(flags);
+}
+
 export type SeedResult = {
   seeded: boolean;
   source?: string; // the R2 key the pre-labels came from
@@ -261,6 +297,10 @@ export async function maybeSeedPrelabels(params: {
     if (errs.length > 0)
       return { seeded: false, source: key, reason: `invalid pre-labels: ${errs.slice(0, 3).join("; ")}` };
 
+    // So off-list pre-labeled venue/job values are flagged for QC just like a
+    // hand-typed custom value would be.
+    const tax = await loadApprovedTaxonomy();
+
     let subTotal = 0;
     await prisma.$transaction(async (tx) => {
       for (const t of parsed.tasks) {
@@ -278,7 +318,7 @@ export async function maybeSeedPrelabels(params: {
             venueL3: t.venueL3,
             job: t.job,
             confidence: t.confidence,
-            qualityFlags: t.qualityFlags,
+            qualityFlags: withTaxonomyFlag(t.qualityFlags, t, tax),
             notes: t.notes,
             subTasks: {
               create: t.subTasks.map((s) => ({
