@@ -11,6 +11,9 @@ import { validateSubmission, VTask } from "@/lib/validate";
 // string rather than the DB-minted `task_id`, since a hand-authored file has no
 // ids yet. On seed we mint real ids and rewire the links. So an exported file,
 // lightly edited, feeds straight back in.
+//
+// Pre-labels cover L1 tasks + L2 sub-tasks only. Frame quality (Q) is a manual
+// annotator judgment and is never pre-seeded — a Q block in the file is ignored.
 
 export const PRELABEL_SCHEMA = "kosha-annotations-v1";
 
@@ -55,7 +58,6 @@ export type SeedResult = {
   source?: string; // the R2 key the pre-labels came from
   tasks?: number;
   subTasks?: number;
-  qframes?: number;
   reason?: string; // why nothing was seeded (missing file, invalid, already has work…)
 };
 
@@ -69,9 +71,6 @@ function int(v: unknown, fallback = 0): number {
 }
 function str(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
-}
-function bool(v: unknown, fallback = false): boolean {
-  return typeof v === "boolean" ? v : fallback;
 }
 function optNum(v: unknown): number | null {
   if (v == null || v === "") return null;
@@ -104,17 +103,7 @@ type ParsedTask = {
   notes: string;
   subTasks: ParsedSub[];
 };
-type ParsedQ = {
-  frameIndex: number;
-  realWork: boolean;
-  repetitive: boolean;
-  occluded: boolean;
-  smudge: boolean;
-  glare: boolean;
-  blur: boolean;
-  notes: string;
-};
-type Parsed = { tasks: ParsedTask[]; qframes: ParsedQ[] };
+type Parsed = { tasks: ParsedTask[] };
 
 // Map the pre-label JSON into row-shaped structures, grouping L2 sub-tasks under
 // their L1 parent by `task_ref`. Throws on a shape that isn't a pre-label file.
@@ -123,9 +112,10 @@ export function parsePrelabels(raw: unknown): Parsed {
   const doc = raw as Record<string, unknown>;
   const L1 = Array.isArray(doc.L1_tasks) ? doc.L1_tasks : [];
   const L2 = Array.isArray(doc.L2_subtasks) ? doc.L2_subtasks : [];
-  const Q = Array.isArray(doc.Q_frame_quality) ? doc.Q_frame_quality : [];
-  if (L1.length === 0 && Q.length === 0)
-    throw new Error("no L1_tasks or Q_frame_quality — is this a pre-label file?");
+  // Q_frame_quality is intentionally ignored: frame quality is a manual
+  // annotator judgment, never pre-seeded.
+  if (L1.length === 0)
+    throw new Error("no L1_tasks — is this a pre-label file?");
 
   // Index sub-tasks by their parent ref (fall back to a single-task file that
   // omits task_ref: attach orphans to the sole task).
@@ -176,21 +166,7 @@ export function parsePrelabels(raw: unknown): Parsed {
     };
   });
 
-  const qframes: ParsedQ[] = Q.map((q) => {
-    const o = q as Record<string, unknown>;
-    return {
-      frameIndex: int(o.frame_index),
-      realWork: bool(o.real_work, true),
-      repetitive: bool(o.repetitive),
-      occluded: bool(o.occluded),
-      smudge: bool(o.smudge),
-      glare: bool(o.glare),
-      blur: bool(o.blur),
-      notes: str(o.notes),
-    };
-  });
-
-  return { tasks, qframes };
+  return { tasks };
 }
 
 // Structural check, reusing the exact submit-time validator so a seeded file
@@ -337,22 +313,6 @@ export async function maybeSeedPrelabels(params: {
           },
         });
       }
-      if (parsed.qframes.length > 0) {
-        await tx.frameQuality.createMany({
-          data: parsed.qframes.map((q) => ({
-            assignmentId,
-            createdById: annotatorId,
-            frameIndex: q.frameIndex,
-            realWork: q.realWork,
-            repetitive: q.repetitive,
-            occluded: q.occluded,
-            smudge: q.smudge,
-            glare: q.glare,
-            blur: q.blur,
-            notes: q.notes,
-          })),
-        });
-      }
     });
 
     return {
@@ -360,7 +320,6 @@ export async function maybeSeedPrelabels(params: {
       source: key,
       tasks: parsed.tasks.length,
       subTasks: subTotal,
-      qframes: parsed.qframes.length,
     };
   } catch (e) {
     // Never let seeding break assignment creation.

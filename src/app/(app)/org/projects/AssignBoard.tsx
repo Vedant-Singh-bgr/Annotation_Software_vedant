@@ -75,8 +75,7 @@ export default function AssignBoard({
       if (p?.seeded) {
         setNote(
           `Assigned — seeded ${p.tasks} task${p.tasks === 1 ? "" : "s"}` +
-            `${p.subTasks ? ` · ${p.subTasks} sub-tasks` : ""}` +
-            `${p.qframes ? ` · ${p.qframes} quality frames` : ""} from pre-labels.`,
+            `${p.subTasks ? ` · ${p.subTasks} sub-tasks` : ""} from pre-labels.`,
         );
       } else if (p && !p.seeded && p.reason && !/no pre-label file|already has tasks/.test(p.reason)) {
         // Surface only genuine problems, not the ordinary "no file here" case.
