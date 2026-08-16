@@ -71,7 +71,10 @@ export default function HandReview({ id }: { id: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setMeta((m) => (m ? { ...m, reviewStatus: data.handFile.reviewStatus } : m));
-      setActionMsg(`Marked ${data.handFile.reviewStatus.toLowerCase()}`);
+      setActionMsg(
+        `Marked ${data.handFile.reviewStatus.toLowerCase()}` +
+          (data.export?.key ? " · delivered to R2" : data.exportError ? " · R2 delivery failed" : ""),
+      );
       router.refresh();
     } catch (e) {
       setActionMsg((e as Error).message);

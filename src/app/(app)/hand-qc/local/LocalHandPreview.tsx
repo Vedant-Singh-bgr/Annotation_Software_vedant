@@ -109,6 +109,13 @@ export default function LocalHandPreview({ isAdmin }: { isAdmin: boolean }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setStatus(data.handFile.reviewStatus);
+      setUploadMsg(
+        data.export?.key
+          ? "Saved — verdict delivered to R2 beside the .npz."
+          : data.exportError
+            ? `Saved — R2 delivery failed: ${data.exportError}`
+            : "Saved.",
+      );
     } catch (e) {
       setUploadMsg((e as Error).message);
     } finally {

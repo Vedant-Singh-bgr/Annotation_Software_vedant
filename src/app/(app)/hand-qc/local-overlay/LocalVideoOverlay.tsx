@@ -116,6 +116,13 @@ export default function LocalVideoOverlay({ isAdmin }: { isAdmin: boolean }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setStatus(data.handFile.reviewStatus);
+      setReviewMsg(
+        data.export?.key
+          ? `Saved — verdict delivered to R2 (${data.export.key}).`
+          : data.exportError
+            ? `Saved — R2 delivery failed: ${data.exportError}`
+            : "Saved.",
+      );
     } catch (e2) {
       setReviewMsg((e2 as Error).message);
     } finally {
